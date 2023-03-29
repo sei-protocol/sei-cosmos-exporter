@@ -43,7 +43,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			Help:        "Status of the Cosmos-based blockchain validator",
 			ConstLabels: ConstLabels,
 		},
-		[]string{"address", "pubkey_hash", "moniker"},
+		[]string{"address", "moniker"},
 	)
 
 	validatorsJailedGauge := prometheus.NewGaugeVec(
