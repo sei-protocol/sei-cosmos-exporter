@@ -43,7 +43,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			Help:        "Status of the Cosmos-based blockchain validator",
 			ConstLabels: ConstLabels,
 		},
-		[]string{"address", "moniker"},
+		[]string{"address", "pubkey_hash", "moniker"},
 	)
 
 	validatorsJailedGauge := prometheus.NewGaugeVec(
@@ -231,9 +231,18 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			}).Set(rate)
 		}
 
+		pubKey, err := validator.GetConsAddr()
+		if err != nil {
+			sublogger.Error().
+				Str("address", validator.OperatorAddress).
+				Err(err).
+				Msg("Could not get validator pubkey")
+		}
+
 		validatorsStatusGauge.With(prometheus.Labels{
 			"address": validator.OperatorAddress,
 			"moniker": validator.Description.Moniker,
+			"pubkey_hash": pubKey.String(),
 		}).Set(float64(validator.Status))
 
 		// golang doesn't have a ternary operator, so we have to stick with this ugly solution
@@ -297,14 +306,6 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				Str("address", validator.OperatorAddress).
 				Err(err).
 				Msg("Could not get unpack validator inferfaces")
-		}
-
-		pubKey, err := validator.GetConsAddr()
-		if err != nil {
-			sublogger.Error().
-				Str("address", validator.OperatorAddress).
-				Err(err).
-				Msg("Could not get validator pubkey")
 		}
 
 		var signingInfo slashingtypes.ValidatorSigningInfo
