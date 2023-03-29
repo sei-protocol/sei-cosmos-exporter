@@ -1,9 +1,8 @@
-# cosmos-exporter
+# sei-cosmos-exporter
 
-![Latest release](https://img.shields.io/github/v/release/solarlabsteam/cosmos-exporter)
-[![Actions Status](https://github.com/solarlabsteam/cosmos-exporter/workflows/test/badge.svg)](https://github.com/solarlabsteam/cosmos-exporter/actions)
+sei-cosmos-exporter is a Prometheus scraper that fetches the data from a full node of a Cosmos-based blockchain via gRPC.
 
-cosmos-exporter is a Prometheus scraper that fetches the data from a full node of a Cosmos-based blockchain via gRPC.
+This is a fork of: https://github.com/solarlabsteam/cosmos-exporter 
 
 ## What can I use it for?
 
@@ -18,57 +17,7 @@ You can run a full node, run cosmos-exporter on the same host, set up Prometheus
 First of all, you need to download the latest release from [the releases page](https://github.com/solarlabsteam/cosmos-exporter/releases/). After that, you should unzip it and you are ready to go:
 
 ```sh
-wget <the link from the releases page>
-tar xvfz cosmos-exporter-*
-./cosmos-exporter
-```
-
-That's not really interesting, what you probably want to do is to have it running in the background. For that, first of all, we have to copy the file to the system apps folder:
-
-```sh
-sudo cp ./cosmos-exporter /usr/bin
-```
-
-Then we need to create a systemd service for our app:
-
-```sh
-sudo nano /etc/systemd/system/cosmos-exporter.service
-```
-
-You can use this template (change the user to whatever user you want this to be executed from. It's advised to create a separate user for that instead of running it from root):
-
-```
-[Unit]
-Description=Cosmos Exporter
-After=network-online.target
-
-[Service]
-User=<username>
-TimeoutStartSec=0
-CPUWeight=95
-IOWeight=95
-ExecStart=cosmos-exporter
-Restart=always
-RestartSec=2
-LimitNOFILE=800000
-KillSignal=SIGTERM
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then we'll add this service to the autostart and run it:
-
-```sh
-sudo systemctl enable cosmos-exporter
-sudo systemctl start cosmos-exporter
-sudo systemctl status cosmos-exporter # validate it's running
-```
-
-If you need to, you can also see the logs of the process:
-
-```sh
-sudo journalctl -u cosmos-exporter -f --output cat
+bash ./install-sei-cosmos-exporter.sh
 ```
 
 ## How can I scrape data from it?
