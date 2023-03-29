@@ -188,7 +188,7 @@ func Execute(cmd *cobra.Command, args []string) {
 }
 
 func setChainID() {
-	client, err := tmrpc.New(TendermintRPC, "/websocket")
+	client, err := tmrpc.New(TendermintRPC)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Could not create Tendermint client")
 	}
