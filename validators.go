@@ -106,7 +106,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			Help:        "1 if the Cosmos-based blockchain validator is in active set, 0 if no",
 			ConstLabels: ConstLabels,
 		},
-		[]string{"address", "moniker"},
+		[]string{"address", "pubkey_hash", "moniker"},
 	)
 
 	registry := prometheus.NewRegistry()
