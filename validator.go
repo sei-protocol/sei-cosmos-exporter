@@ -140,7 +140,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 			Help:        "Status of the Cosmos-based blockchain validator",
 			ConstLabels: ConstLabels,
 		},
-		[]string{"address", "moniker"},
+		[]string{"address", "pubkey_hash", "moniker"},
 	)
 
 	validatorJailedGauge := prometheus.NewGaugeVec(
@@ -234,6 +234,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 	validatorStatusGauge.With(prometheus.Labels{
 		"address": validator.Validator.OperatorAddress,
 		"moniker": validator.Validator.Description.Moniker,
+		"pubkey_hash": validator.Validator.ConsensusPubkey.String(),
 	}).Set(float64(validator.Validator.Status))
 
 	// golang doesn't have a ternary operator, so we have to stick with this ugly solution
