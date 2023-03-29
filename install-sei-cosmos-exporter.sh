@@ -33,4 +33,4 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable cosmos-exporter
-sudo systemctl start cosmos-exporter
+sudo systemctl restart cosmos-exporter
