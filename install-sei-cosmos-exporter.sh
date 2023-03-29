@@ -6,7 +6,7 @@ BENCH_PREFIX=sei
 echo -e "\e[1m\e[32m1. Installing cosmos-exporter... \e[0m" && sleep 1
 # install cosmos-exporter
 sudo go build -o build/sei-cosmos-exporter ./
-sudo mv ./sei-cosmos-exporter /usr/bin
+sudo mv ./build/sei-cosmos-exporter /usr/bin
 
 sudo useradd -rs /bin/false cosmos_exporter
 
