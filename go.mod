@@ -20,7 +20,7 @@ require (
 
 replace (
 	github.com/CosmWasm/wasmd => github.com/sei-protocol/sei-wasmd v0.0.1
-	github.com/cosmos/cosmos-sdk => github.com/sei-protocol/sei-cosmos v0.2.11
+	github.com/cosmos/cosmos-sdk => github.com/sei-protocol/sei-cosmos v0.2.12
 	github.com/cosmos/iavl => github.com/sei-protocol/sei-iavl v0.1.3
-	github.com/tendermint/tendermint => github.com/sei-protocol/sei-tendermint v0.2.0
+	github.com/tendermint/tendermint => github.com/sei-protocol/sei-tendermint v0.2.1
 )
