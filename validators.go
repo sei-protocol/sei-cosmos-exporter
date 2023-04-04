@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -355,7 +356,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			validatorsIsActiveGauge.With(prometheus.Labels{
 				"address": validator.OperatorAddress,
 				"moniker": validator.Description.Moniker,
-				"pubkey_hash": hex.EncodeToString(pubKey.Bytes()),
+				"pubkey_hash": strings.ToUpper(hex.EncodeToString(pubKey.Bytes())),
 			}).Set(active)
 		}
 	}
