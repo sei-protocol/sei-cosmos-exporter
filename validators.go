@@ -345,17 +345,15 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 		if validatorSetLength != 0 {
 			// golang doesn't have a ternary operator, so we have to stick with this ugly solution
-			var active float64
+			active := float64(1)
 
-			if index+1 <= int(validatorSetLength) {
-				active = 1
-			} else {
+			if validator.Jailed || index+1 > int(validatorSetLength) {
 				active = 0
 			}
 
 			validatorsIsActiveGauge.With(prometheus.Labels{
-				"address": validator.OperatorAddress,
-				"moniker": validator.Description.Moniker,
+				"address":     validator.OperatorAddress,
+				"moniker":     validator.Description.Moniker,
 				"pubkey_hash": strings.ToUpper(hex.EncodeToString(pubKey.Bytes())),
 			}).Set(active)
 		}
