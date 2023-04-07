@@ -7,7 +7,7 @@ echo -e "\e[1m\e[32m1. Installing cosmos-exporter... \e[0m" && sleep 1
 source ~/.bashrc
 
 # install cosmos-exporter
-sudo /usr/bin/go build -o build/sei-cosmos-exporter -buildvcs=false ./
+sudo /usr/local/go/bin/go build -o build/sei-cosmos-exporter -buildvcs=false ./
 sudo mv ./build/sei-cosmos-exporter /usr/bin
 
 sudo useradd -rs /bin/false cosmos_exporter
