@@ -8,6 +8,8 @@ source ~/.bashrc
 
 # install cosmos-exporter
 sudo /usr/local/go/bin/go build -o build/sei-cosmos-exporter -buildvcs=false ./
+sudo /usr/bin/go build -o build/sei-cosmos-exporter -buildvcs=false ./
+sudo go build -o build/sei-cosmos-exporter -buildvcs=false ./
 sudo mv ./build/sei-cosmos-exporter /usr/bin
 
 sudo useradd -rs /bin/false cosmos_exporter
