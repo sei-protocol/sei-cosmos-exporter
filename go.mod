@@ -9,6 +9,7 @@ replace google.golang.org/grpc => google.golang.org/grpc v1.33.2
 require (
 	github.com/cosmos/cosmos-sdk v0.42.4
 	github.com/google/uuid v1.3.0
+	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/prometheus/client_golang v1.12.2
 	github.com/rs/zerolog v1.27.0
 	github.com/spf13/cobra v1.4.0

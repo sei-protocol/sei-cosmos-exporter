@@ -160,6 +160,12 @@ func Execute(cmd *cobra.Command, args []string) {
 	setChainID()
 	setDenom(grpcConn)
 
+	streamCollector, err := NewStreamCollector(TendermintRPC, log)
+	if err != nil {
+		panic(err)
+	}
+	streamCollector.Start(cmd.Context())
+
 	http.HandleFunc("/metrics/wallet", func(w http.ResponseWriter, r *http.Request) {
 		WalletHandler(w, r, grpcConn)
 	})
@@ -178,6 +184,9 @@ func Execute(cmd *cobra.Command, args []string) {
 
 	http.HandleFunc("/metrics/general", func(w http.ResponseWriter, r *http.Request) {
 		GeneralHandler(w, r, grpcConn)
+	})
+	http.HandleFunc("/metrics/stream", func(w http.ResponseWriter, r *http.Request) {
+		streamCollector.StreamHandler(w, r)
 	})
 
 	log.Info().Str("address", ListenAddress).Msg("Listening")
