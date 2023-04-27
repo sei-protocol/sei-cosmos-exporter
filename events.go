@@ -31,17 +31,17 @@ var (
 		"message.action",
 		"/cosmos.bank.v1beta1.MsgSend",
 	)
-	queryInterval = 100 * time.Millisecond
+	queryInterval = 300 * time.Millisecond
 )
 
-type StreamCollector struct {
+type EventCollector struct {
 	rpcClient          tmrpcclient.Client
 	logger             zerolog.Logger
 	recentlySeenHashes *simplelru.LRU
-	histogram          *prometheus.HistogramVec
+	counter            *prometheus.CounterVec
 }
 
-func NewStreamCollector(tmRPC string, logger zerolog.Logger) (*StreamCollector, error) {
+func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, error) {
 	httpClient, err := tmjsonclient.DefaultHTTPClient(tmRPC)
 	if err != nil {
 		return nil, err
@@ -57,23 +57,23 @@ func NewStreamCollector(tmRPC string, logger zerolog.Logger) (*StreamCollector, 
 	if err != nil {
 		return nil, err
 	}
-	transfersValueHistogram := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "cosmos_bank_transfer_amount",
-			Help:    "Number of tokens transferred in a transfer message",
-			Buckets: prometheus.ExponentialBuckets(1e6, 10, 10),
+	transfersValueCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:        "cosmos_bank_transfer_amount",
+			Help:        "Number of tokens transferred in a transfer message",
+			ConstLabels: ConstLabels,
 		},
-		[]string{"denom"},
+		[]string{"denom", "sender", "recipient"},
 	)
-	return &StreamCollector{
+	return &EventCollector{
 		rpcClient:          rpcClient,
 		logger:             logger,
 		recentlySeenHashes: recentlySeen,
-		histogram:          transfersValueHistogram,
+		counter:            transfersValueCounter,
 	}, nil
 }
 
-func (s StreamCollector) Start(
+func (s EventCollector) Start(
 	ctx context.Context,
 ) error {
 	if !started {
@@ -87,12 +87,13 @@ func (s StreamCollector) Start(
 	return nil
 }
 
-func (s StreamCollector) subscribe(
+func (s EventCollector) subscribe(
 	ctx context.Context,
 	eventsClient tmrpcclient.EventsClient,
 ) {
 	s.logger.Info().Msg(fmt.Sprintf("Listening for bank transfer event with query: %s\n", queryEventBankTransfer))
 	for {
+		// TODO: this has issues with multiple events at the same time since it only gets latest (need to do custom one that will accept multiple / or go by height?)
 		eventData, err := tmrpcclient.WaitForOneEvent(ctx, eventsClient, queryEventBankTransfer)
 		if err != nil {
 			s.logger.Debug().Msg("Failed to query EventTypeTransfer")
@@ -118,8 +119,12 @@ func (s StreamCollector) subscribe(
 					// check the balance
 					var amount float64
 					var denom string
+					var sender string
+					var recipient string
 					for _, attr := range event.Attributes {
-						if string(attr.Key) == sdk.AttributeKeyAmount {
+						attrKey := string(attr.Key)
+						switch attrKey {
+						case sdk.AttributeKeyAmount:
 							amountStr := string(attr.Value)
 							// separate the denom
 							re := regexp.MustCompile(`\d+|\D+`)
@@ -130,11 +135,19 @@ func (s StreamCollector) subscribe(
 							if err != nil {
 								s.logger.Err(err).Msg("")
 							}
-							break
+						case banktypes.AttributeKeyRecipient:
+							recipient = string(attr.Value)
+							// todo
+						case banktypes.AttributeKeySender:
+							sender = string(attr.Value)
 						}
 					}
-					if amount != 0 {
-						s.histogram.With(prometheus.Labels{"denom": denom}).Observe(amount)
+					if amount > 1e11 {
+						s.counter.With(prometheus.Labels{
+							"denom":     denom,
+							"sender":    sender,
+							"recipient": recipient,
+						}).Add(amount)
 					}
 				}
 			}
@@ -144,7 +157,7 @@ func (s StreamCollector) subscribe(
 	}
 }
 
-func (s StreamCollector) StreamHandler(w http.ResponseWriter, r *http.Request) {
+func (s EventCollector) StreamHandler(w http.ResponseWriter, r *http.Request) {
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -152,7 +165,7 @@ func (s StreamCollector) StreamHandler(w http.ResponseWriter, r *http.Request) {
 		Logger()
 
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(s.histogram)
+	registry.MustRegister(s.counter)
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
