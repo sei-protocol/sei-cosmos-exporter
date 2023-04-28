@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -12,18 +11,18 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/google/uuid"
-	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	tmrpcclient "github.com/tendermint/tendermint/rpc/client"
+	tmrpceventstream "github.com/tendermint/tendermint/rpc/client/eventstream"
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
+	"github.com/tendermint/tendermint/rpc/coretypes"
 	tmjsonclient "github.com/tendermint/tendermint/rpc/jsonrpc/client"
 	tmtypes "github.com/tendermint/tendermint/types"
 )
 
 var (
-	started                = false
 	queryEventBankTransfer = fmt.Sprintf(
 		"%s='%s' AND %s='%s'",
 		tmtypes.EventTypeKey,
@@ -31,14 +30,13 @@ var (
 		"message.action",
 		"/cosmos.bank.v1beta1.MsgSend",
 	)
-	queryInterval = 300 * time.Millisecond
 )
 
 type EventCollector struct {
-	rpcClient          tmrpcclient.Client
-	logger             zerolog.Logger
-	recentlySeenHashes *simplelru.LRU
-	counter            *prometheus.CounterVec
+	rpcClient tmrpcclient.Client
+	logger    zerolog.Logger
+	counter   *prometheus.CounterVec
+	up        *prometheus.GaugeVec
 }
 
 func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, error) {
@@ -46,14 +44,8 @@ func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, er
 	if err != nil {
 		return nil, err
 	}
-
-	httpClient.Timeout = 500 * time.Millisecond
-
+	// no timeout because we will continue fetching events continuously
 	rpcClient, err := rpchttp.NewWithClient(tmRPC, httpClient)
-	if err != nil {
-		return nil, err
-	}
-	recentlySeen, err := simplelru.NewLRU(10, func(k interface{}, v interface{}) { /* noop */ })
 	if err != nil {
 		return nil, err
 	}
@@ -65,96 +57,109 @@ func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, er
 		},
 		[]string{"denom", "sender", "recipient"},
 	)
+	upGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:        "cosmos_bank_transfer_up",
+			Help:        "Whether the bank transfer event collector is up",
+			ConstLabels: ConstLabels,
+		},
+		[]string{"denom", "sender", "recipient"},
+	)
 	return &EventCollector{
-		rpcClient:          rpcClient,
-		logger:             logger,
-		recentlySeenHashes: recentlySeen,
-		counter:            transfersValueCounter,
+		rpcClient: rpcClient,
+		logger:    logger,
+		counter:   transfersValueCounter,
+		up:        upGauge,
 	}, nil
 }
 
 func (s EventCollector) Start(
 	ctx context.Context,
 ) error {
-	if !started {
-		if err := s.rpcClient.Start(ctx); err != nil {
-			return err
-		}
-		s.logger.Info().Msg("Starting StreamCollector")
-		go s.subscribe(ctx, s.rpcClient)
-		started = true
+	if err := s.rpcClient.Start(ctx); err != nil {
+		return err
 	}
+	s.logger.Info().Msg("Starting StreamCollector")
+	go s.RunBankTransferEventStream(ctx)
+
 	return nil
 }
 
-func (s EventCollector) subscribe(
-	ctx context.Context,
-	eventsClient tmrpcclient.EventsClient,
-) {
-	s.logger.Info().Msg(fmt.Sprintf("Listening for bank transfer event with query: %s\n", queryEventBankTransfer))
+func (s EventCollector) RunBankTransferEventStream(ctx context.Context) {
+	eventStream := tmrpceventstream.New(s.rpcClient, queryEventBankTransfer, &tmrpceventstream.StreamOptions{
+		WaitTime: 300 * time.Millisecond,
+	})
+	streamEventErr := make(chan error, 1)
+	go func() {
+		streamEventErr <- eventStream.Run(ctx, s.HandleBankTransferEvent)
+	}()
 	for {
-		// TODO: this has issues with multiple events at the same time since it only gets latest (need to do custom one that will accept multiple / or go by height?)
-		eventData, err := tmrpcclient.WaitForOneEvent(ctx, eventsClient, queryEventBankTransfer)
-		if err != nil {
-			s.logger.Debug().Msg("Failed to query EventTypeTransfer")
-			continue
-		}
-		eventDataTx, ok := eventData.(tmtypes.EventDataTx)
-		if !ok {
-			s.logger.Err(err).Msg("Failed to parse event from eventDataNewBlockHeader")
-			continue
+		// try recovering forever if only missed items errors
+		err := <-streamEventErr
+		if _, ok := err.(*tmrpceventstream.MissedItemsError); ok {
+			//fallen behind, restart
+			s.logger.Err(err).Msg("Error in eventstream")
+			// reset + run again
+			eventStream.Reset()
+			go func() {
+				streamEventErr <- eventStream.Run(ctx, s.HandleBankTransferEvent)
+			}()
 		} else {
-			result := eventDataTx.Result
-			txHash := hex.EncodeToString(tmtypes.Tx(eventDataTx.Tx).Hash())
-			events := result.Events
+			panic(err) // panic so we trigger `up` alerting
+		}
+	}
+}
 
-			// dedupe to avoid double counting txs
-			if s.recentlySeenHashes.Contains(txHash) {
-				continue
-			}
-			s.recentlySeenHashes.Add(txHash, struct{}{})
+func (s EventCollector) HandleBankTransferEvent(eventItem *coretypes.EventItem) error {
+	eventData, err := tmtypes.TryUnmarshalEventData(eventItem.Data)
+	if err != nil {
+		s.logger.Err(err).Msg("Failed to unmarshal event data")
+		return nil
+	}
+	eventDataTx, ok := eventData.(tmtypes.EventDataTx)
+	if !ok {
+		s.logger.Err(err).Msg("Failed to parse event from eventDataNewBlockHeader")
+		return nil
+	} else {
+		events := eventDataTx.Result.Events
+		for _, event := range events {
+			if event.Type == banktypes.EventTypeTransfer {
+				// check the balance
+				var amount float64
+				var denom string
+				var sender string
+				var recipient string
+				for _, attr := range event.Attributes {
+					attrKey := string(attr.Key)
+					switch attrKey {
+					case sdk.AttributeKeyAmount:
+						amountStr := string(attr.Value)
+						// separate the denom
+						re := regexp.MustCompile(`\d+|\D+`)
+						res := re.FindAllString(amountStr, -1)
 
-			for _, event := range events {
-				if event.Type == banktypes.EventTypeTransfer {
-					// check the balance
-					var amount float64
-					var denom string
-					var sender string
-					var recipient string
-					for _, attr := range event.Attributes {
-						attrKey := string(attr.Key)
-						switch attrKey {
-						case sdk.AttributeKeyAmount:
-							amountStr := string(attr.Value)
-							// separate the denom
-							re := regexp.MustCompile(`\d+|\D+`)
-							res := re.FindAllString(amountStr, -1)
-
-							denom = res[1]
-							amount, err = strconv.ParseFloat(res[0], 64)
-							if err != nil {
-								s.logger.Err(err).Msg("")
-							}
-						case banktypes.AttributeKeyRecipient:
-							recipient = string(attr.Value)
-							// todo
-						case banktypes.AttributeKeySender:
-							sender = string(attr.Value)
+						denom = res[1]
+						amount, err = strconv.ParseFloat(res[0], 64)
+						if err != nil {
+							s.logger.Err(err).Msg("")
 						}
+					case banktypes.AttributeKeyRecipient:
+						recipient = string(attr.Value)
+					case banktypes.AttributeKeySender:
+						sender = string(attr.Value)
 					}
-					if amount > 1e11 {
-						s.counter.With(prometheus.Labels{
-							"denom":     denom,
-							"sender":    sender,
-							"recipient": recipient,
-						}).Add(amount)
-					}
+				}
+				if amount > 1e11 {
+					s.counter.With(prometheus.Labels{
+						"denom":     denom,
+						"sender":    sender,
+						"recipient": recipient,
+					}).Add(amount)
 				}
 			}
 		}
-
-		time.Sleep(queryInterval)
 	}
+	return nil
 }
 
 func (s EventCollector) StreamHandler(w http.ResponseWriter, r *http.Request) {
