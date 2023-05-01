@@ -36,7 +36,6 @@ type EventCollector struct {
 	rpcClient tmrpcclient.Client
 	logger    zerolog.Logger
 	counter   *prometheus.CounterVec
-	up        *prometheus.GaugeVec
 }
 
 func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, error) {
@@ -57,19 +56,10 @@ func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, er
 		},
 		[]string{"denom", "sender", "recipient"},
 	)
-	upGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name:        "cosmos_bank_transfer_up",
-			Help:        "Whether the bank transfer event collector is up",
-			ConstLabels: ConstLabels,
-		},
-		[]string{"denom", "sender", "recipient"},
-	)
 	return &EventCollector{
 		rpcClient: rpcClient,
 		logger:    logger,
 		counter:   transfersValueCounter,
-		up:        upGauge,
 	}, nil
 }
 
@@ -176,7 +166,7 @@ func (s EventCollector) StreamHandler(w http.ResponseWriter, r *http.Request) {
 	h.ServeHTTP(w, r)
 	sublogger.Info().
 		Str("method", "GET").
-		Str("endpoint", "/metrics/stream").
+		Str("endpoint", "/metrics/event").
 		Float64("request-time", time.Since(requestStart).Seconds()).
 		Msg("Request processed")
 }

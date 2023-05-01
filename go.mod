@@ -22,5 +22,5 @@ replace (
 	github.com/CosmWasm/wasmd => github.com/sei-protocol/sei-wasmd v0.0.1
 	github.com/cosmos/cosmos-sdk => github.com/sei-protocol/sei-cosmos v0.2.26
 	github.com/cosmos/iavl => github.com/sei-protocol/sei-iavl v0.1.3
-	github.com/tendermint/tendermint => github.com/sei-protocol/sei-tendermint v0.2.14-0.20230428210900-48f6e69b9bf8
+	github.com/tendermint/tendermint => github.com/sei-protocol/sei-tendermint v0.2.14-0.20230501140134-b64c7820e71d
 )
