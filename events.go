@@ -33,12 +33,13 @@ var (
 )
 
 type EventCollector struct {
-	rpcClient tmrpcclient.Client
-	logger    zerolog.Logger
-	counter   *prometheus.CounterVec
+	rpcClient             tmrpcclient.Client
+	logger                zerolog.Logger
+	counter               *prometheus.CounterVec
+	BankTransferThreshold uint64
 }
 
-func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, error) {
+func NewEventCollector(tmRPC string, logger zerolog.Logger, bankTransferThreshold uint64) (*EventCollector, error) {
 	httpClient, err := tmjsonclient.DefaultHTTPClient(tmRPC)
 	if err != nil {
 		return nil, err
@@ -57,9 +58,10 @@ func NewEventCollector(tmRPC string, logger zerolog.Logger) (*EventCollector, er
 		[]string{"denom", "sender", "recipient"},
 	)
 	return &EventCollector{
-		rpcClient: rpcClient,
-		logger:    logger,
-		counter:   transfersValueCounter,
+		rpcClient:             rpcClient,
+		logger:                logger,
+		counter:               transfersValueCounter,
+		BankTransferThreshold: bankTransferThreshold,
 	}, nil
 }
 
@@ -139,7 +141,7 @@ func (s EventCollector) HandleBankTransferEvent(eventItem *coretypes.EventItem) 
 						sender = string(attr.Value)
 					}
 				}
-				if amount > 1e11 {
+				if amount > s.BankTransferThreshold {
 					s.counter.With(prometheus.Labels{
 						"denom":     denom,
 						"sender":    sender,

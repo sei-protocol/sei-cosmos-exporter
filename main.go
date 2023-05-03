@@ -36,6 +36,8 @@ var (
 	ConsensusNodePrefix       string
 	ConsensusNodePubkeyPrefix string
 
+	BankTransferThreshold uint64
+
 	ChainID          string
 	ConstLabels      map[string]string
 	DenomCoefficient float64
@@ -160,7 +162,7 @@ func Execute(cmd *cobra.Command, args []string) {
 	setChainID()
 	setDenom(grpcConn)
 
-	eventCollector, err := NewEventCollector(TendermintRPC, log)
+	eventCollector, err := NewEventCollector(TendermintRPC, log, BankTransferThreshold)
 	if err != nil {
 		panic(err)
 	}
@@ -307,6 +309,8 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&ValidatorPubkeyPrefix, "bech-validator-pubkey-prefix", "", "Bech32 pubkey validator prefix")
 	rootCmd.PersistentFlags().StringVar(&ConsensusNodePrefix, "bech-consensus-node-prefix", "", "Bech32 consensus node prefix")
 	rootCmd.PersistentFlags().StringVar(&ConsensusNodePubkeyPrefix, "bech-consensus-node-pubkey-prefix", "", "Bech32 pubkey consensus node prefix")
+
+	rootCmd.PersistentFlags().Uint64Var(&BankTransferThreshold, "bank-transfer-threshold", 1e11, "The threshold for which to track bank transfers")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal().Err(err).Msg("Could not start application")
