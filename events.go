@@ -36,10 +36,10 @@ type EventCollector struct {
 	rpcClient             tmrpcclient.Client
 	logger                zerolog.Logger
 	counter               *prometheus.CounterVec
-	BankTransferThreshold uint64
+	BankTransferThreshold float64
 }
 
-func NewEventCollector(tmRPC string, logger zerolog.Logger, bankTransferThreshold uint64) (*EventCollector, error) {
+func NewEventCollector(tmRPC string, logger zerolog.Logger, bankTransferThreshold float64) (*EventCollector, error) {
 	httpClient, err := tmjsonclient.DefaultHTTPClient(tmRPC)
 	if err != nil {
 		return nil, err

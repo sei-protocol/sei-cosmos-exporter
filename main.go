@@ -36,7 +36,7 @@ var (
 	ConsensusNodePrefix       string
 	ConsensusNodePubkeyPrefix string
 
-	BankTransferThreshold uint64
+	BankTransferThreshold float64
 
 	ChainID          string
 	ConstLabels      map[string]string
@@ -310,7 +310,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&ConsensusNodePrefix, "bech-consensus-node-prefix", "", "Bech32 consensus node prefix")
 	rootCmd.PersistentFlags().StringVar(&ConsensusNodePubkeyPrefix, "bech-consensus-node-pubkey-prefix", "", "Bech32 pubkey consensus node prefix")
 
-	rootCmd.PersistentFlags().Uint64Var(&BankTransferThreshold, "bank-transfer-threshold", 1e11, "The threshold for which to track bank transfers")
+	rootCmd.PersistentFlags().Float64Var(&BankTransferThreshold, "bank-transfer-threshold", 1e11, "The threshold for which to track bank transfers")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal().Err(err).Msg("Could not start application")
