@@ -187,6 +187,11 @@ func Execute(cmd *cobra.Command, args []string) {
 	http.HandleFunc("/metrics/general", func(w http.ResponseWriter, r *http.Request) {
 		GeneralHandler(w, r, grpcConn)
 	})
+
+	http.HandleFunc("/metrics/sei", func(w http.ResponseWriter, r *http.Request) {
+		SeiMetricHandler(w, r, grpcConn)
+	})
+
 	http.HandleFunc("/metrics/event", func(w http.ResponseWriter, r *http.Request) {
 		eventCollector.StreamHandler(w, r)
 	})
