@@ -188,7 +188,7 @@ func Execute(cmd *cobra.Command, args []string) {
 		GeneralHandler(w, r, grpcConn)
 	})
 
-	http.HandleFunc("/metrics/sei", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/metrics/oracle", func(w http.ResponseWriter, r *http.Request) {
 		SeiMetricHandler(w, r, grpcConn)
 	})
 
