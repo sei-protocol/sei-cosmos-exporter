@@ -2,3 +2,5 @@ main
 
 dist/
 build/
+.gitignore
+/.idea

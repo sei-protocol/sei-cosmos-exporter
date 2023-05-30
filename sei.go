@@ -52,16 +52,12 @@ func SeiMetricHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 		oracleClient := oracletypes.NewQueryClient(grpcConn)
 		response, err := oracleClient.VotePenaltyCounter(context.Background(), &oracletypes.QueryVotePenaltyCounterRequest{ValidatorAddr: address})
 
-		// response, err := http.Get(ApiAddress + "/sei-protocol/sei-chain/oracle/validators/" + address + "/vote_penalty_counter")
 		if err != nil {
 			sublogger.Error().
 				Err(err).
 				Msg("Could not get oracle feeder metrics")
 			return
 		}
-		// counter := response.VotePenaltyCounter.MissCount
-
-		//var data map[string]votePenaltyCounter
 
 		sublogger.Debug().
 			Float64("request-time", time.Since(queryStart).Seconds()).
@@ -82,7 +78,7 @@ func SeiMetricHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 	h.ServeHTTP(w, r)
 	sublogger.Info().
 		Str("method", "GET").
-		Str("endpoint", "/metrics/sei").
+		Str("endpoint", "/metrics/oracle").
 		Float64("request-time", time.Since(requestStart).Seconds()).
 		Msg("Request processed")
 }
