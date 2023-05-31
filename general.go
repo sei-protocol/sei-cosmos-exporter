@@ -169,8 +169,8 @@ func GeneralHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Clien
 					Msg("Could not get total supply")
 			} else {
 				generalSupplyTotalGauge.With(prometheus.Labels{
-					"denom": Denom,
-				}).Set(value / DenomCoefficient)
+					"denom": coin.GetDenom(),
+				}).Set(value)
 			}
 		}
 	}()
