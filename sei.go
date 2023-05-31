@@ -20,7 +20,7 @@ type votePenaltyCounter struct {
 	SuccessCount string `json:"success_count"`
 }
 
-func SeiMetricHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+func OracleMetricHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -31,7 +31,7 @@ func SeiMetricHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 	votePenaltyCount := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:        "cosmos_sei_oracle_vote_penalty_count",
+			Name:        "cosmos_oracle_vote_penalty_count",
 			Help:        "Vote penalty miss count",
 			ConstLabels: ConstLabels,
 		},
