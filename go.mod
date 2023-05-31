@@ -7,15 +7,17 @@ replace github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alp
 replace google.golang.org/grpc => google.golang.org/grpc v1.33.2
 
 require (
-	github.com/cosmos/cosmos-sdk v0.42.4
+	github.com/cosmos/cosmos-sdk v0.45.4
 	github.com/google/uuid v1.3.0
 	github.com/prometheus/client_golang v1.12.2
 	github.com/rs/zerolog v1.27.0
+	github.com/sei-protocol/sei-chain v0.0.0-20230504211348-d6a3e606c7d3
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.12.0
 	github.com/tendermint/tendermint v0.37.0-dev
-	google.golang.org/grpc v1.50.1
+	google.golang.org/grpc v1.53.0
+
 )
 
 replace (
