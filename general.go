@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	query "github.com/cosmos/cosmos-sdk/types/query"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distributiontypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -153,86 +153,43 @@ func GeneralHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Clien
 			context.Background(),
 			&banktypes.QueryTotalSupplyRequest{},
 		)
-		if err != nil {
-			sublogger.Error().Err(err).Msg("Could not get bank total supply")
-			return
-		}
 
-		sublogger.Debug().
-			Float64("request-time", time.Since(queryStart).Seconds()).
-			Msg("Finished querying bank total supply")
-
-		for _, coin := range response.Supply {
-			if value, err := strconv.ParseFloat(coin.Amount.String(), 64); err != nil {
-				sublogger.Error().
-					Err(err).
-					Msg("Could not get total supply")
-			} else {
-				generalSupplyTotalGauge.With(prometheus.Labels{
-					"denom": coin.GetDenom(),
-				}).Set(value)
+		for {
+			if err != nil {
+				sublogger.Error().Err(err).Msg("Could not get bank total supply")
+				return
 			}
-		}
-	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sublogger.Debug().Msg("Started querying inflation")
-		queryStart := time.Now()
+			sublogger.Debug().
+				Float64("request-time", time.Since(queryStart).Seconds()).
+				Msg("Finished querying bank total supply")
 
-		mintClient := minttypes.NewQueryClient(grpcConn)
-		response, err := mintClient.Inflation(
-			context.Background(),
-			&minttypes.QueryInflationRequest{},
-		)
-		if err != nil {
-			sublogger.Error().Err(err).Msg("Could not get inflation")
-			return
-		}
+			for _, coin := range response.Supply {
+				if value, err := strconv.ParseFloat(coin.Amount.String(), 64); err != nil {
+					sublogger.Error().
+						Err(err).
+						Msg("Could not get total supply")
+				} else {
+					generalSupplyTotalGauge.With(prometheus.Labels{
+						"denom": coin.GetDenom(),
+					}).Set(value)
+				}
+			}
 
-		sublogger.Debug().
-			Float64("request-time", time.Since(queryStart).Seconds()).
-			Msg("Finished querying inflation")
+			if response.Pagination.NextKey == nil {
+				break
+			}
 
-		if value, err := strconv.ParseFloat(response.Inflation.String(), 64); err != nil {
-			sublogger.Error().
-				Err(err).
-				Msg("Could not get inflation")
-		} else {
-			generalInflationGauge.Set(value)
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sublogger.Debug().Msg("Started querying annual provisions")
-		queryStart := time.Now()
-
-		mintClient := minttypes.NewQueryClient(grpcConn)
-		response, err := mintClient.AnnualProvisions(
-			context.Background(),
-			&minttypes.QueryAnnualProvisionsRequest{},
-		)
-		if err != nil {
-			sublogger.Error().Err(err).Msg("Could not get annual provisions")
-			return
+			response, err = bankClient.TotalSupply(
+				context.Background(),
+				&banktypes.QueryTotalSupplyRequest{
+					Pagination: &query.PageRequest{
+						Key: response.Pagination.NextKey,
+					},
+				},
+			)
 		}
 
-		sublogger.Debug().
-			Float64("request-time", time.Since(queryStart).Seconds()).
-			Msg("Finished querying annual provisions")
-
-		if value, err := strconv.ParseFloat(response.AnnualProvisions.String(), 64); err != nil {
-			sublogger.Error().
-				Err(err).
-				Msg("Could not get annual provisions")
-		} else {
-			generalAnnualProvisions.With(prometheus.Labels{
-				"denom": Denom,
-			}).Set(value / DenomCoefficient)
-		}
 	}()
 
 	wg.Wait()
