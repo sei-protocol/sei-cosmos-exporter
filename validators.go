@@ -232,6 +232,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		Int("validatorsLength", len(validators)).
 		Msg("Validators info")
 
+	activeValidators := 0
 	for index, validator := range validators {
 		// because cosmos's dec doesn't have .toFloat64() method or whatever and returns everything as int
 		rate, err := strconv.ParseFloat(validator.Commission.CommissionRates.Rate.String(), 64)
@@ -361,7 +362,13 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			// golang doesn't have a ternary operator, so we have to stick with this ugly solution
 			active := float64(1)
 
-			if validator.Jailed || index+1 > int(validatorSetLength) {
+			if validator.Jailed {
+				sublogger.Info().Str("moniker", validator.Description.Moniker).Msg("Validator is jailed, not returning active status")
+				active = 0
+			}
+
+			if activeValidators+1 > int(validatorSetLength) {
+				sublogger.Info().Str("moniker", validator.Description.Moniker).Int("Index", index).Msg("Already at max active set, not returning active status")
 				active = 0
 			}
 
@@ -370,6 +377,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				"moniker":     validator.Description.Moniker,
 				"pubkey_hash": strings.ToUpper(hex.EncodeToString(pubKey.Bytes())),
 			}).Set(active)
+			sublogger.Info().Str("moniker", validator.Description.Moniker).Int("isActive", int(active)).Msg("Validator is active ")
 		}
 	}
 
