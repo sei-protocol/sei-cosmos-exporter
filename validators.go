@@ -169,7 +169,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 		// sorting by delegator shares to display rankings
 		sort.Slice(validators, func(i, j int) bool {
-			return validators[i].DelegatorShares.GT(validators[j].DelegatorShares)
+			return validators[i].Tokens.GT(validators[j].Tokens)
 		})
 	}()
 
@@ -379,7 +379,8 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				"moniker":     validator.Description.Moniker,
 				"pubkey_hash": strings.ToUpper(hex.EncodeToString(pubKey.Bytes())),
 			}).Set(active)
-			sublogger.Info().Str("moniker", validator.Description.Moniker).Int("isActive", int(active)).Int("activeValidators", activeValidators).Msg("Validator is active ")
+
+			sublogger.Info().Str("moniker", validator.Description.Moniker).Int("isActive", int(active)).Int("activeValidators", activeValidators).Msg("Validator status")
 		}
 	}
 	sublogger.Info().Int("activeValidators", activeValidators).Msg("Active validators")
