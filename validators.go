@@ -158,7 +158,6 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				break
 			}
 
-			sublogger.Info().Int("NumValidators", len(validatorsOnPage)).Msg("Validators on this page")
 			validators = append(validators, validatorsOnPage...)
 			offset = uint64(len(validators))
 		}
