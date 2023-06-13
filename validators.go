@@ -136,7 +136,6 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 
-		allValidators := []stakingtypes.Validator{}
 		offset := uint64(0)
 		for {
 			validatorsResponse, err := stakingClient.Validators(
@@ -154,24 +153,24 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				return
 			}
 
-			validators := validatorsResponse.GetValidators()
-			if validatorsResponse == nil || len(validators) == 0 {
+			validatorsOnPage := validatorsResponse.GetValidators()
+			if validatorsResponse == nil || len(validatorsOnPage) == 0 {
 				break
 			}
 
-			sublogger.Info().Int("NumValidators", len(validators)).Msg("Validators on this page")
-			allValidators = append(allValidators, validators...)
-			offset = uint64(len(allValidators))
+			sublogger.Info().Int("NumValidators", len(validatorsOnPage)).Msg("Validators on this page")
+			validators = append(validators, validatorsOnPage...)
+			offset = uint64(len(validators))
 		}
 
-		sublogger.Info().Int("TotalValidators", len(allValidators)).Msg("Validators in total")
+		sublogger.Info().Int("TotalValidators", len(validators)).Msg("Validators in total")
 		sublogger.Debug().
 			Float64("request-time", time.Since(queryStart).Seconds()).
 			Msg("Finished querying validators")
 
 		// sorting by delegator shares to display rankings
-		sort.Slice(allValidators, func(i, j int) bool {
-			return allValidators[i].DelegatorShares.GT(allValidators[j].DelegatorShares)
+		sort.Slice(validators, func(i, j int) bool {
+			return validators[i].DelegatorShares.GT(validators[j].DelegatorShares)
 		})
 	}()
 
