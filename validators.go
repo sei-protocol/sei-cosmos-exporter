@@ -137,12 +137,14 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 
 		allValidators := []stakingtypes.Validator{}
+		offset := uint64(0)
 		for {
 			validatorsResponse, err := stakingClient.Validators(
 				context.Background(),
 				&stakingtypes.QueryValidatorsRequest{
 					Pagination: &querytypes.PageRequest{
-						Limit: Limit,
+						Limit:  Limit,
+						Offset: offset,
 					},
 				},
 			)
@@ -153,11 +155,13 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			}
 
 			validators := validatorsResponse.GetValidators()
-			sublogger.Info().Int("NumValidators", len(validators)).Msg("Validators on this page")
-			allValidators = append(allValidators, validators...)
-			if validatorsResponse != nil || validatorsResponse.GetPagination().GetNextKey() != nil {
+			if validatorsResponse != nil || len(validators) == 0 {
 				break
 			}
+
+			sublogger.Info().Int("NumValidators", len(validators)).Msg("Validators on this page")
+			allValidators = append(allValidators, validators...)
+			offset = uint64(len(allValidators))
 		}
 
 		sublogger.Info().Int("TotalValidators", len(validators)).Msg("Validators in total")
