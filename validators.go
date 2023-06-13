@@ -135,27 +135,40 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		queryStart := time.Now()
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
-		validatorsResponse, err := stakingClient.Validators(
-			context.Background(),
-			&stakingtypes.QueryValidatorsRequest{
-				Pagination: &querytypes.PageRequest{
-					Limit: Limit,
+
+		offset := uint64(0)
+		for {
+			validatorsResponse, err := stakingClient.Validators(
+				context.Background(),
+				&stakingtypes.QueryValidatorsRequest{
+					Pagination: &querytypes.PageRequest{
+						Limit:  Limit,
+						Offset: offset,
+					},
 				},
-			},
-		)
-		if err != nil {
-			sublogger.Error().Err(err).Msg("Could not get validators")
-			return
+			)
+
+			if err != nil {
+				sublogger.Error().Err(err).Msg("Could not get validators")
+				return
+			}
+
+			validatorsOnPage := validatorsResponse.GetValidators()
+			if validatorsResponse == nil || len(validatorsOnPage) == 0 {
+				break
+			}
+
+			validators = append(validators, validatorsOnPage...)
+			offset = uint64(len(validators))
 		}
 
 		sublogger.Debug().
 			Float64("request-time", time.Since(queryStart).Seconds()).
 			Msg("Finished querying validators")
-		validators = validatorsResponse.Validators
 
 		// sorting by delegator shares to display rankings
 		sort.Slice(validators, func(i, j int) bool {
-			return validators[i].DelegatorShares.GT(validators[j].DelegatorShares)
+			return validators[i].Tokens.GT(validators[j].Tokens)
 		})
 	}()
 
@@ -213,11 +226,12 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 	wg.Wait()
 
-	sublogger.Debug().
+	sublogger.Info().
 		Int("signingLength", len(signingInfos)).
 		Int("validatorsLength", len(validators)).
 		Msg("Validators info")
 
+	activeValidators := 0
 	for index, validator := range validators {
 		// because cosmos's dec doesn't have .toFloat64() method or whatever and returns everything as int
 		rate, err := strconv.ParseFloat(validator.Commission.CommissionRates.Rate.String(), 64)
@@ -347,9 +361,15 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			// golang doesn't have a ternary operator, so we have to stick with this ugly solution
 			active := float64(1)
 
-			if validator.Jailed || index+1 > int(validatorSetLength) {
+			if validator.Jailed {
 				active = 0
 			}
+
+			if activeValidators == int(validatorSetLength) {
+				active = 0
+			}
+
+			activeValidators += int(active)
 
 			validatorsIsActiveGauge.With(prometheus.Labels{
 				"address":     validator.OperatorAddress,
@@ -358,6 +378,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			}).Set(active)
 		}
 	}
+	sublogger.Info().Int("activeValidators", activeValidators).Msg("Active validators")
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
