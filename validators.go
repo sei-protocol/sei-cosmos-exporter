@@ -152,16 +152,15 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				return
 			}
 
-			if validatorsResponse != nil || validatorsResponse.GetPagination().GetNextKey() != nil {
-				break
-			}
-
 			validators := validatorsResponse.GetValidators()
 			sublogger.Info().Int("NumValidators", len(validators)).Msg("Validators on this page")
 			allValidators = append(allValidators, validators...)
+			if validatorsResponse != nil || validatorsResponse.GetPagination().GetNextKey() != nil {
+				break
+			}
 		}
 
-		sublogger.Info().Int("NumValidators", len(validators)).Msg("Validators in total")
+		sublogger.Info().Int("TotalValidators", len(validators)).Msg("Validators in total")
 		sublogger.Debug().
 			Float64("request-time", time.Since(queryStart).Seconds()).
 			Msg("Finished querying validators")
