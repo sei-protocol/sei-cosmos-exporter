@@ -372,6 +372,8 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				active = 0
 			}
 
+			activeValidators += int(active)
+
 			validatorsIsActiveGauge.With(prometheus.Labels{
 				"address":     validator.OperatorAddress,
 				"moniker":     validator.Description.Moniker,
@@ -380,6 +382,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			sublogger.Info().Str("moniker", validator.Description.Moniker).Int("isActive", int(active)).Msg("Validator is active ")
 		}
 	}
+	sublogger.Info().Int("activeValidators", activeValidators).Msg("Active validators")
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
