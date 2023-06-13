@@ -135,26 +135,36 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		queryStart := time.Now()
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
-		validatorsResponse, err := stakingClient.Validators(
-			context.Background(),
-			&stakingtypes.QueryValidatorsRequest{
-				Pagination: &querytypes.PageRequest{
-					Limit: Limit,
+
+		allValidators := []stakingtypes.Validator{}
+		for {
+			validatorsResponse, err := stakingClient.Validators(
+				context.Background(),
+				&stakingtypes.QueryValidatorsRequest{
+					Pagination: &querytypes.PageRequest{
+						Limit: Limit,
+					},
 				},
-			},
-		)
-		if err != nil {
-			sublogger.Error().Err(err).Msg("Could not get validators")
-			return
+			)
+
+			if err != nil {
+				sublogger.Error().Err(err).Msg("Could not get validators")
+				return
+			}
+
+			if validatorsResponse != nil || validatorsResponse.GetPagination().GetNextKey() != nil {
+				break
+			}
+			allValidators = append(allValidators, validatorsResponse.GetValidators()...)
+
 		}
 
 		sublogger.Debug().
 			Float64("request-time", time.Since(queryStart).Seconds()).
 			Msg("Finished querying validators")
-		validators = validatorsResponse.Validators
 
 		// sorting by delegator shares to display rankings
-		sort.Slice(validators, func(i, j int) bool {
+		sort.Slice(allValidators, func(i, j int) bool {
 			return validators[i].DelegatorShares.GT(validators[j].DelegatorShares)
 		})
 	}()
