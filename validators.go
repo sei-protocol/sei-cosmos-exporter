@@ -164,14 +164,14 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			offset = uint64(len(allValidators))
 		}
 
-		sublogger.Info().Int("TotalValidators", len(validators)).Msg("Validators in total")
+		sublogger.Info().Int("TotalValidators", len(allValidators)).Msg("Validators in total")
 		sublogger.Debug().
 			Float64("request-time", time.Since(queryStart).Seconds()).
 			Msg("Finished querying validators")
 
 		// sorting by delegator shares to display rankings
 		sort.Slice(allValidators, func(i, j int) bool {
-			return validators[i].DelegatorShares.GT(validators[j].DelegatorShares)
+			return allValidators[i].DelegatorShares.GT(allValidators[j].DelegatorShares)
 		})
 	}()
 
