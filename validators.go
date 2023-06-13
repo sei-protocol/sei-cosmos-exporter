@@ -227,7 +227,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 	wg.Wait()
 
-	sublogger.Debug().
+	sublogger.Info().
 		Int("signingLength", len(signingInfos)).
 		Int("validatorsLength", len(validators)).
 		Msg("Validators info")
