@@ -363,12 +363,12 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			active := float64(1)
 
 			if validator.Jailed {
-				sublogger.Info().Str("moniker", validator.Description.Moniker).Msg("Validator is jailed, not returning active status")
+				sublogger.Info().Str("moniker", validator.Description.Moniker).Int("activeValidators", activeValidators).Msg("Validator is jailed, not returning active status")
 				active = 0
 			}
 
-			if activeValidators+1 > int(validatorSetLength) {
-				sublogger.Info().Str("moniker", validator.Description.Moniker).Int("Index", index).Msg("Already at max active set, not returning active status")
+			if activeValidators == int(validatorSetLength) {
+				sublogger.Info().Str("moniker", validator.Description.Moniker).Int("Index", index).Int("activeValidators", activeValidators).Msg("Already at max active set, not returning active status")
 				active = 0
 			}
 
@@ -379,7 +379,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 				"moniker":     validator.Description.Moniker,
 				"pubkey_hash": strings.ToUpper(hex.EncodeToString(pubKey.Bytes())),
 			}).Set(active)
-			sublogger.Info().Str("moniker", validator.Description.Moniker).Int("isActive", int(active)).Msg("Validator is active ")
+			sublogger.Info().Str("moniker", validator.Description.Moniker).Int("isActive", int(active)).Int("activeValidators", activeValidators).Msg("Validator is active ")
 		}
 	}
 	sublogger.Info().Int("activeValidators", activeValidators).Msg("Active validators")
