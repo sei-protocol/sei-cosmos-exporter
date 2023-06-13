@@ -155,7 +155,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			}
 
 			validators := validatorsResponse.GetValidators()
-			if validatorsResponse != nil || len(validators) == 0 {
+			if validatorsResponse == nil || len(validators) == 0 {
 				break
 			}
 
