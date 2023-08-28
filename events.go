@@ -147,6 +147,15 @@ func (s EventCollector) HandleBankTransferEvent(eventItem *coretypes.EventItem) 
 						"sender":    sender,
 						"recipient": recipient,
 					}).Add(amount)
+					// Expire the metrics after sufficient investigation (3 days)
+					go func() {
+						time.Sleep(3 * 24 * time.Hour)
+						s.counter.Delete(prometheus.Labels{
+							"denom":     denom,
+							"sender":    sender,
+							"recipient": recipient,
+						})
+					}()
 				}
 			}
 		}
