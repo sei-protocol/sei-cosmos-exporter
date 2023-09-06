@@ -35,7 +35,7 @@ var (
 type EventCollector struct {
 	rpcClient             tmrpcclient.Client
 	logger                zerolog.Logger
-	counter               *prometheus.CounterVec
+	gauge                 *prometheus.GaugeVec
 	BankTransferThreshold float64
 }
 
@@ -49,8 +49,8 @@ func NewEventCollector(tmRPC string, logger zerolog.Logger, bankTransferThreshol
 	if err != nil {
 		return nil, err
 	}
-	transfersValueCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	transfersValueGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Name:        "cosmos_bank_transfer_amount",
 			Help:        "Number of tokens transferred in a transfer message",
 			ConstLabels: ConstLabels,
@@ -60,7 +60,7 @@ func NewEventCollector(tmRPC string, logger zerolog.Logger, bankTransferThreshol
 	return &EventCollector{
 		rpcClient:             rpcClient,
 		logger:                logger,
-		counter:               transfersValueCounter,
+		gauge:                 transfersValueGauge,
 		BankTransferThreshold: bankTransferThreshold,
 	}, nil
 }
@@ -142,15 +142,15 @@ func (s EventCollector) HandleBankTransferEvent(eventItem *coretypes.EventItem) 
 					}
 				}
 				if amount > s.BankTransferThreshold {
-					s.counter.With(prometheus.Labels{
+					s.gauge.With(prometheus.Labels{
 						"denom":     denom,
 						"sender":    sender,
 						"recipient": recipient,
-					}).Add(amount)
+					}).Set(amount)
 					// Expire the metrics after 5 minutes
 					go func() {
 						time.Sleep(5 * time.Minute)
-						s.counter.Delete(prometheus.Labels{
+						s.gauge.Delete(prometheus.Labels{
 							"denom":     denom,
 							"sender":    sender,
 							"recipient": recipient,
@@ -171,7 +171,7 @@ func (s EventCollector) StreamHandler(w http.ResponseWriter, r *http.Request) {
 		Logger()
 
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(s.counter)
+	registry.MustRegister(s.gauge)
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
