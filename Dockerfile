@@ -23,10 +23,15 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -o /out/sei-cosmos-exporter ./
 
 # ----- runtime ------------------------------------------------------------
-# distroless nonroot pins UID/GID 65532 — matches the controller's
-# sidecarSecurityContext (RunAsNonRoot + RunAsUser 65532) so the
-# pod's fsGroup propagation works without extra config.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1
+# Provides /bin/bash for the wait-then-exec wrapper in the pod spec.
+# UID/GID 65532 matches sei-k8s-controller's sidecarSecurityContext.
+FROM docker.io/ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system --gid 65532 nonroot && \
+    useradd --system --uid 65532 --gid 65532 --shell /sbin/nologin --no-create-home nonroot
 
 COPY --from=builder /out/sei-cosmos-exporter /usr/local/bin/sei-cosmos-exporter
 
@@ -36,8 +41,7 @@ USER nonroot:nonroot
 
 ENTRYPOINT ["/usr/local/bin/sei-cosmos-exporter"]
 
-# Sei-flavored defaults. K8s pod spec passes explicit Args which overrides
-# this — see sei-k8s-controller buildCosmosExporterContainer.
+# K8s pod spec overrides both ENTRYPOINT and CMD with a bash wait wrapper.
 CMD ["--denom", "usei", \
      "--denom-coefficient", "1000000", \
      "--bech-prefix", "sei", \
