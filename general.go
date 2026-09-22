@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"sync"
@@ -18,6 +17,9 @@ import (
 )
 
 func GeneralHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -93,7 +95,7 @@ func GeneralHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Clien
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		response, err := stakingClient.Pool(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryPoolRequest{},
 		)
 		if err != nil {
@@ -117,7 +119,7 @@ func GeneralHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Clien
 
 		distributionClient := distributiontypes.NewQueryClient(grpcConn)
 		response, err := distributionClient.CommunityPool(
-			context.Background(),
+			ctx,
 			&distributiontypes.QueryCommunityPoolRequest{},
 		)
 		if err != nil {
@@ -150,7 +152,7 @@ func GeneralHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Clien
 
 		bankClient := banktypes.NewQueryClient(grpcConn)
 		response, err := bankClient.TotalSupply(
-			context.Background(),
+			ctx,
 			&banktypes.QueryTotalSupplyRequest{},
 		)
 
@@ -181,7 +183,7 @@ func GeneralHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Clien
 			}
 
 			response, err = bankClient.TotalSupply(
-				context.Background(),
+				ctx,
 				&banktypes.QueryTotalSupplyRequest{
 					Pagination: &query.PageRequest{
 						Key: response.Pagination.NextKey,

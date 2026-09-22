@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -21,6 +20,9 @@ type votePenaltyCounter struct {
 }
 
 func OracleMetricHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -50,7 +52,7 @@ func OracleMetricHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.
 		queryStart := time.Now()
 
 		oracleClient := oracletypes.NewQueryClient(grpcConn)
-		response, err := oracleClient.VotePenaltyCounter(context.Background(), &oracletypes.QueryVotePenaltyCounterRequest{ValidatorAddr: address})
+		response, err := oracleClient.VotePenaltyCounter(ctx, &oracletypes.QueryVotePenaltyCounterRequest{ValidatorAddr: address})
 
 		if err != nil {
 			sublogger.Error().

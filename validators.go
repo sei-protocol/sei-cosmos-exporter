@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/hex"
 	"net/http"
 	"sort"
@@ -21,6 +20,9 @@ import (
 )
 
 func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
 	encCfg := simapp.MakeTestEncodingConfig()
 	interfaceRegistry := encCfg.InterfaceRegistry
 
@@ -139,7 +141,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		offset := uint64(0)
 		for {
 			validatorsResponse, err := stakingClient.Validators(
-				context.Background(),
+				ctx,
 				&stakingtypes.QueryValidatorsRequest{
 					Pagination: &querytypes.PageRequest{
 						Limit:  Limit,
@@ -180,7 +182,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 		slashingClient := slashingtypes.NewQueryClient(grpcConn)
 		signingInfosResponse, err := slashingClient.SigningInfos(
-			context.Background(),
+			ctx,
 			&slashingtypes.QuerySigningInfosRequest{
 				Pagination: &querytypes.PageRequest{
 					Limit: Limit,
@@ -208,7 +210,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		paramsResponse, err := stakingClient.Params(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryParamsRequest{},
 		)
 		if err != nil {

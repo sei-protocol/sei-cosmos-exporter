@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"sort"
 	"strconv"
@@ -21,6 +20,9 @@ import (
 )
 
 func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
 	requestStart := time.Now()
 	sublogger := log.With().
 		Str("request-id", uuid.New().String()).
@@ -175,7 +177,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 	stakingClient := stakingtypes.NewQueryClient(grpcConn)
 	validator, err := stakingClient.Validator(
-		context.Background(),
+		ctx,
 		&stakingtypes.QueryValidatorRequest{ValidatorAddr: myAddress.String()},
 	)
 	if err != nil {
@@ -262,7 +264,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		stakingRes, err := stakingClient.ValidatorDelegations(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryValidatorDelegationsRequest{
 				ValidatorAddr: myAddress.String(),
 				Pagination: &querytypes.PageRequest{
@@ -312,7 +314,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 		distributionClient := distributiontypes.NewQueryClient(grpcConn)
 		distributionRes, err := distributionClient.ValidatorCommission(
-			context.Background(),
+			ctx,
 			&distributiontypes.QueryValidatorCommissionRequest{ValidatorAddress: myAddress.String()},
 		)
 		if err != nil {
@@ -357,7 +359,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 		distributionClient := distributiontypes.NewQueryClient(grpcConn)
 		distributionRes, err := distributionClient.ValidatorOutstandingRewards(
-			context.Background(),
+			ctx,
 			&distributiontypes.QueryValidatorOutstandingRewardsRequest{ValidatorAddress: myAddress.String()},
 		)
 		if err != nil {
@@ -401,7 +403,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		stakingRes, err := stakingClient.ValidatorUnbondingDelegations(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryValidatorUnbondingDelegationsRequest{ValidatorAddr: myAddress.String()},
 		)
 		if err != nil {
@@ -451,7 +453,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		stakingRes, err := stakingClient.Redelegations(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryRedelegationsRequest{SrcValidatorAddr: myAddress.String()},
 		)
 		if err != nil {
@@ -521,7 +523,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 		slashingClient := slashingtypes.NewQueryClient(grpcConn)
 		slashingRes, err := slashingClient.SigningInfo(
-			context.Background(),
+			ctx,
 			&slashingtypes.QuerySigningInfoRequest{ConsAddress: pubKey.String()},
 		)
 		if err != nil {
@@ -559,7 +561,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		stakingRes, err := stakingClient.Validators(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryValidatorsRequest{
 				Pagination: &querytypes.PageRequest{
 					Limit: Limit,
@@ -623,7 +625,7 @@ func ValidatorHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cli
 		queryStart = time.Now()
 
 		paramsRes, err := stakingClient.Params(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryParamsRequest{},
 		)
 		if err != nil {

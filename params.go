@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"sync"
@@ -18,6 +17,9 @@ import (
 )
 
 func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -168,7 +170,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		paramsResponse, err := stakingClient.Params(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryParamsRequest{},
 		)
 		if err != nil {
@@ -194,7 +196,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		mintClient := minttypes.NewQueryClient(grpcConn)
 		paramsResponse, err := mintClient.Params(
-			context.Background(),
+			ctx,
 			&minttypes.QueryParamsRequest{},
 		)
 		if err != nil {
@@ -252,7 +254,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		slashingClient := slashingtypes.NewQueryClient(grpcConn)
 		paramsResponse, err := slashingClient.Params(
-			context.Background(),
+			ctx,
 			&slashingtypes.QueryParamsRequest{},
 		)
 		if err != nil {
@@ -302,7 +304,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		distributionClient := distributiontypes.NewQueryClient(grpcConn)
 		paramsResponse, err := distributionClient.Params(
-			context.Background(),
+			ctx,
 			&distributiontypes.QueryParamsRequest{},
 		)
 		if err != nil {

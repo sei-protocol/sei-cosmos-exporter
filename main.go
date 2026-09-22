@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -15,6 +16,8 @@ import (
 	"github.com/spf13/viper"
 	tmrpc "github.com/tendermint/tendermint/rpc/client/http"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 )
 
 var (
@@ -37,6 +40,7 @@ var (
 	ConsensusNodePubkeyPrefix string
 
 	BankTransferThreshold float64
+	RequestTimeout        time.Duration
 
 	ChainID          string
 	ConstLabels      map[string]string
@@ -45,6 +49,12 @@ var (
 )
 
 var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout}).With().Timestamp().Logger()
+
+// requestContext bounds every gRPC query issued on behalf of an HTTP request by
+// RequestTimeout and cancels it when the scraper goes away.
+func requestContext(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(r.Context(), RequestTimeout)
+}
 
 var rootCmd = &cobra.Command{
 	Use:  "cosmos-exporter",
@@ -153,7 +163,12 @@ func Execute(cmd *cobra.Command, args []string) {
 
 	grpcConn, err := grpc.Dial(
 		NodeAddress,
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                5 * time.Minute,
+			Timeout:             20 * time.Second,
+			PermitWithoutStream: true,
+		}),
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Could not connect to gRPC node")
@@ -303,6 +318,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&NodeAddress, "node", "localhost:9090", "RPC node address")
 	rootCmd.PersistentFlags().StringVar(&LogLevel, "log-level", "info", "Logging level")
 	rootCmd.PersistentFlags().Uint64Var(&Limit, "limit", 1000, "Pagination limit for gRPC requests")
+	rootCmd.PersistentFlags().DurationVar(&RequestTimeout, "request-timeout", 8*time.Second, "Deadline for the gRPC queries behind a single metrics request")
 	rootCmd.PersistentFlags().StringVar(&TendermintRPC, "tendermint-rpc", "http://localhost:26657", "Tendermint RPC address")
 	rootCmd.PersistentFlags().BoolVar(&JSONOutput, "json", false, "Output logs as JSON")
 
