@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -163,17 +164,27 @@ func (c *evmRPCClient) tokenBalance(token, wallet string) (*big.Int, error) {
 	return hexToBig(result)
 }
 
-func (c *evmRPCClient) nativeBalance(wallet string) (*big.Int, error) {
-	result, err := c.call("eth_getBalance", wallet, "latest")
-	if err != nil {
-		return nil, err
+// evmAddress resolves a sei1 address to the 0x address the EVM sees it as: the
+// associated address when one exists, otherwise the cast of the same 20 bytes,
+// matching the chain's GetEVMAddressOrDefault.
+func (c *evmRPCClient) evmAddress(acc sdk.AccAddress) (string, error) {
+	result, err := c.call("sei_getEVMAddress", acc.String())
+	if err == nil {
+		if !evmAddressPattern.MatchString(result) {
+			return "", fmt.Errorf("sei_getEVMAddress returned %q", result)
+		}
+		return strings.ToLower(result), nil
 	}
-	return hexToBig(result)
+	if !strings.Contains(err.Error(), "failed to find EVM address") {
+		return "", err
+	}
+	return "0x" + hex.EncodeToString(acc), nil
 }
 
-// EVMWalletHandler serves /metrics/evm-wallet?address=0x...&tokens=0x...,0x...
-// It exposes the wallet's native balance and its balance of each listed ERC-20
-// contract, both read over EVM JSON-RPC.
+// EVMWalletHandler serves /metrics/evm-wallet?address=sei1...&tokens=0x...,0x...
+// It exposes the wallet's balance of each listed ERC-20 contract, read over EVM
+// JSON-RPC at the wallet's EVM address, under the same metric name and labels
+// seid's cosmosmetrics reports so the two sources are interchangeable.
 func EVMWalletHandler(w http.ResponseWriter, r *http.Request, rpc *evmRPCClient) {
 	requestStart := time.Now()
 
@@ -182,12 +193,12 @@ func EVMWalletHandler(w http.ResponseWriter, r *http.Request, rpc *evmRPCClient)
 		Logger()
 
 	address := r.URL.Query().Get("address")
-	if !evmAddressPattern.MatchString(address) {
-		sublogger.Error().Str("address", address).Msg("Not a 0x address")
-		http.Error(w, "address must be a 0x-prefixed 20-byte hex address", http.StatusBadRequest)
+	acc, err := sdk.AccAddressFromBech32(address)
+	if err != nil {
+		sublogger.Error().Str("address", address).Err(err).Msg("Not a bech32 account address")
+		http.Error(w, "address must be a bech32 account address", http.StatusBadRequest)
 		return
 	}
-	address = strings.ToLower(address)
 
 	var tokens []string
 	for _, token := range strings.Split(r.URL.Query().Get("tokens"), ",") {
@@ -203,63 +214,26 @@ func EVMWalletHandler(w http.ResponseWriter, r *http.Request, rpc *evmRPCClient)
 		tokens = append(tokens, strings.ToLower(token))
 	}
 
-	nativeBalanceGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name:        "evm_wallet_balance",
-			Help:        "Native balance of the wallet as seen from the EVM, in display denom",
-			ConstLabels: ConstLabels,
-		},
-		[]string{"address", "denom"},
-	)
-
 	tokenBalanceGauge := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name:        "evm_wallet_token_balance",
-			Help:        "ERC-20 balance of the wallet, scaled by the token's decimals()",
+			Name:        "sei_chain_cosmos_wallet_erc20_balance",
+			Help:        "ERC-20 balance of the wallet's EVM address by token, in token units",
 			ConstLabels: ConstLabels,
 		},
-		[]string{"address", "token", "symbol"},
-	)
-
-	tokenErrorGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name:        "evm_wallet_token_query_failed",
-			Help:        "1 when the ERC-20 balance for this wallet/token pair could not be read this scrape",
-			ConstLabels: ConstLabels,
-		},
-		[]string{"address", "token"},
+		[]string{"address", "evm_address", "token", "symbol"},
 	)
 
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(nativeBalanceGauge)
 	registry.MustRegister(tokenBalanceGauge)
-	registry.MustRegister(tokenErrorGauge)
+
+	evmAddress, err := rpc.evmAddress(acc)
+	if err != nil {
+		sublogger.Error().Str("address", address).Err(err).Msg("Could not resolve EVM address")
+		http.Error(w, "could not resolve EVM address: "+err.Error(), http.StatusBadGateway)
+		return
+	}
 
 	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		queryStart := time.Now()
-
-		wei, err := rpc.nativeBalance(address)
-		if err != nil {
-			sublogger.Error().Str("address", address).Err(err).Msg("Could not get native balance")
-			return
-		}
-
-		sublogger.Debug().
-			Str("address", address).
-			Float64("request-time", time.Since(queryStart).Seconds()).
-			Msg("Finished querying native balance")
-
-		// eth_getBalance is denominated in 18-decimal wei regardless of the chain's base denom.
-		nativeBalanceGauge.With(prometheus.Labels{
-			"address": address,
-			"denom":   Denom,
-		}).Set(bigToFloat(wei) / 1e18)
-	}()
-
 	for _, token := range tokens {
 		wg.Add(1)
 		go func(token string) {
@@ -269,14 +243,12 @@ func EVMWalletHandler(w http.ResponseWriter, r *http.Request, rpc *evmRPCClient)
 			meta, err := rpc.tokenMetadata(token)
 			if err != nil {
 				sublogger.Error().Str("token", token).Err(err).Msg("Could not get token metadata")
-				tokenErrorGauge.With(prometheus.Labels{"address": address, "token": token}).Set(1)
 				return
 			}
 
-			balance, err := rpc.tokenBalance(token, address)
+			balance, err := rpc.tokenBalance(token, evmAddress)
 			if err != nil {
 				sublogger.Error().Str("address", address).Str("token", token).Err(err).Msg("Could not get token balance")
-				tokenErrorGauge.With(prometheus.Labels{"address": address, "token": token}).Set(1)
 				return
 			}
 
@@ -286,11 +258,11 @@ func EVMWalletHandler(w http.ResponseWriter, r *http.Request, rpc *evmRPCClient)
 				Float64("request-time", time.Since(queryStart).Seconds()).
 				Msg("Finished querying token balance")
 
-			tokenErrorGauge.With(prometheus.Labels{"address": address, "token": token}).Set(0)
 			tokenBalanceGauge.With(prometheus.Labels{
-				"address": address,
-				"token":   token,
-				"symbol":  meta.symbol,
+				"address":     address,
+				"evm_address": evmAddress,
+				"token":       token,
+				"symbol":      meta.symbol,
 			}).Set(bigToFloat(balance) / meta.coefficient)
 		}(token)
 	}

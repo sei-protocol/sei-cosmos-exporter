@@ -8,11 +8,16 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
-	testWallet = "0x1111111111111111111111111111111111111111"
-	testToken  = "0x2222222222222222222222222222222222222222"
+	// sei1 encoding of the 20 bytes 0x11...11, so its cast address is testWallet.
+	testSeiWallet = "sei1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3v3x55w"
+	testWallet    = "0x1111111111111111111111111111111111111111"
+	testAssoc     = "0x3333333333333333333333333333333333333333"
+	testToken     = "0x2222222222222222222222222222222222222222"
 )
 
 // abiString encodes s as a single ABI dynamic string return value.
@@ -41,7 +46,9 @@ func hexOf(b []byte) string {
 	return string(out)
 }
 
-func stubRPC(t *testing.T) *httptest.Server {
+// stubRPC serves a token with 6 decimals and a 123.456789 balance for expectWallet.
+// associated is the sei_getEVMAddress answer; "" means the wallet is unassociated.
+func stubRPC(t *testing.T, associated, expectWallet string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req struct {
@@ -54,8 +61,13 @@ func stubRPC(t *testing.T) *httptest.Server {
 
 		var result string
 		switch req.Method {
-		case "eth_getBalance":
-			result = "0x" + strings.TrimLeft(leftPadHex(2_500_000_000_000_000_000), "0") // 2.5 SEI in wei
+		case "sei_getEVMAddress":
+			if associated == "" {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": 1,
+					"error": map[string]interface{}{"code": -32000, "message": "failed to find EVM address for " + testSeiWallet}})
+				return
+			}
+			result = associated
 		case "eth_call":
 			var call map[string]string
 			_ = json.Unmarshal(req.Params[0], &call)
@@ -66,7 +78,7 @@ func stubRPC(t *testing.T) *httptest.Server {
 			case strings.HasPrefix(data, selectorSymbol):
 				result = abiString("USDC")
 			case strings.HasPrefix(data, selectorBalanceOf):
-				if !strings.HasSuffix(data, strings.TrimPrefix(testWallet, "0x")) {
+				if !strings.HasSuffix(data, strings.TrimPrefix(expectWallet, "0x")) {
 					t.Fatalf("balanceOf called for unexpected wallet: %s", data)
 				}
 				result = "0x" + leftPadHex(123_456_789) // 123.456789 USDC
@@ -82,34 +94,35 @@ func stubRPC(t *testing.T) *httptest.Server {
 
 func TestEVMWalletHandler(t *testing.T) {
 	ConstLabels = map[string]string{"chain_id": "test-1"}
-	Denom = "sei"
-	tokenMetadataCache = sync.Map{}
+	sdk.GetConfig().SetBech32PrefixForAccount("sei", "seipub")
 
-	server := stubRPC(t)
-	defer server.Close()
-	client := newEVMRPCClient(server.URL)
-
-	req := httptest.NewRequest(http.MethodGet, "/metrics/evm-wallet?address="+testWallet+"&tokens="+testToken, nil)
-	rec := httptest.NewRecorder()
-	EVMWalletHandler(rec, req, client)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
-	}
-	out := rec.Body.String()
-	for _, want := range []string{
-		`evm_wallet_balance{address="` + testWallet + `",chain_id="test-1",denom="sei"} 2.5`,
-		`evm_wallet_token_balance{address="` + testWallet + `",chain_id="test-1",symbol="USDC",token="` + testToken + `"} 123.456789`,
-		`evm_wallet_token_query_failed{address="` + testWallet + `",chain_id="test-1",token="` + testToken + `"} 0`,
+	for name, tc := range map[string]struct{ associated, evmAddress string }{
+		"unassociated wallet uses the cast address": {"", testWallet},
+		"associated wallet uses the associated one": {testAssoc, testAssoc},
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q in:\n%s", want, out)
-		}
+		t.Run(name, func(t *testing.T) {
+			tokenMetadataCache = sync.Map{}
+			server := stubRPC(t, tc.associated, tc.evmAddress)
+			defer server.Close()
+
+			req := httptest.NewRequest(http.MethodGet, "/metrics/evm-wallet?address="+testSeiWallet+"&tokens="+testToken, nil)
+			rec := httptest.NewRecorder()
+			EVMWalletHandler(rec, req, newEVMRPCClient(server.URL))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+			}
+			want := `sei_chain_cosmos_wallet_erc20_balance{address="` + testSeiWallet + `",chain_id="test-1",evm_address="` + tc.evmAddress + `",symbol="USDC",token="` + testToken + `"} 123.456789`
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("missing %q in:\n%s", want, rec.Body.String())
+			}
+		})
 	}
 }
 
-func TestEVMWalletHandlerRejectsBech32(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/metrics/evm-wallet?address=sei1zaa6nwk8p2eu29xaswhc6y6vlcmwtn398s7jy8", nil)
+func TestEVMWalletHandlerRejectsHexAddress(t *testing.T) {
+	sdk.GetConfig().SetBech32PrefixForAccount("sei", "seipub")
+	req := httptest.NewRequest(http.MethodGet, "/metrics/evm-wallet?address="+testWallet, nil)
 	rec := httptest.NewRecorder()
 	EVMWalletHandler(rec, req, newEVMRPCClient("http://127.0.0.1:0"))
 	if rec.Code != http.StatusBadRequest {

@@ -70,7 +70,7 @@ All of the metrics provided by cosmos-exporter have the following prefixes:
 - `cosmos_validator_*` - metrics related to a single validator
 - `cosmos_validators_*` - metrics related to a validator set
 - `cosmos_wallet_*` - metrics related to a single wallet
-- `evm_wallet_*` - native and ERC-20 balances of a single 0x wallet, served by `/metrics/evm-wallet?address=0x...&tokens=0x...,0x...` over EVM JSON-RPC
+- `sei_chain_cosmos_wallet_erc20_balance` - ERC-20 balances of a single sei1 wallet at its EVM address, served by `/metrics/evm-wallet?address=sei1...&tokens=0x...,0x...` over EVM JSON-RPC. Same name and labels as seid's in-process `cosmosmetrics`, so dashboards and alerts work unchanged once nodes report it themselves
 
 ## How does it work?
 
