@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"sync"
@@ -18,6 +17,9 @@ import (
 )
 
 func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -98,7 +100,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		bankClient := banktypes.NewQueryClient(grpcConn)
 		bankRes, err := bankClient.AllBalances(
-			context.Background(),
+			ctx,
 			&banktypes.QueryAllBalancesRequest{Address: myAddress.String()},
 		)
 		if err != nil {
@@ -140,7 +142,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		stakingRes, err := stakingClient.DelegatorDelegations(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryDelegatorDelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
 		if err != nil {
@@ -183,7 +185,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		stakingRes, err := stakingClient.DelegatorUnbondingDelegations(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryDelegatorUnbondingDelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
 		if err != nil {
@@ -231,7 +233,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		stakingClient := stakingtypes.NewQueryClient(grpcConn)
 		stakingRes, err := stakingClient.Redelegations(
-			context.Background(),
+			ctx,
 			&stakingtypes.QueryRedelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
 		if err != nil {
@@ -281,7 +283,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 		distributionClient := distributiontypes.NewQueryClient(grpcConn)
 		distributionRes, err := distributionClient.DelegationTotalRewards(
-			context.Background(),
+			ctx,
 			&distributiontypes.QueryDelegationTotalRewardsRequest{DelegatorAddress: myAddress.String()},
 		)
 		if err != nil {
