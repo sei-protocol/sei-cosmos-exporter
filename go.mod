@@ -1,4 +1,4 @@
-module main
+module github.com/sei-protocol/sei-cosmos-exporter
 
 go 1.16
 

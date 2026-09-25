@@ -70,6 +70,7 @@ All of the metrics provided by cosmos-exporter have the following prefixes:
 - `cosmos_validator_*` - metrics related to a single validator
 - `cosmos_validators_*` - metrics related to a validator set
 - `cosmos_wallet_*` - metrics related to a single wallet
+- `sei_chain_cosmos_wallet_erc20_balance` - ERC-20 balances of a single sei1 wallet at its EVM address, served by `/metrics/evm-wallet?address=sei1...&tokens=0x...,0x...` over EVM JSON-RPC. Same name and labels as seid's in-process `cosmosmetrics`, so dashboards and alerts work unchanged once nodes report it themselves
 
 ## How does it work?
 
@@ -86,6 +87,7 @@ You can pass the artuments to the executable file to configure it. Here is the p
 - `--listen-address` - the address with port the node would listen to. For example, you can use it to redefine port or to make the exporter accessible from the outside by listening on `127.0.0.1`. Defaults to `:9300` (so it's accessible from the outside on port 9300)
 - `--node` - the gRPC node URL. Defaults to `localhost:9090`
 - `--tendermint-rpc` - Tendermint RPC URL to query node stats (specifically `chain-id`). Defaults to `http://localhost:26657`
+- `--evm-rpc` - EVM JSON-RPC URL used by `/metrics/evm-wallet`. Defaults to `http://localhost:8545`
 - `--log-devel` - logger level. Defaults to `info`. You can set it to `debug` to make it more verbose.
 - `--limit` - pagination limit for gRPC requests. Defaults to 1000.
 - `--json` - output logs as JSON. Useful if you don't read it on servers but instead use logging aggregation solutions such as ELK stack.
