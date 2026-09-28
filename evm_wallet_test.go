@@ -46,9 +46,21 @@ func hexOf(b []byte) string {
 	return string(out)
 }
 
-// stubRPC serves a token with 6 decimals and a 123.456789 balance for expectWallet.
-// associated is the sei_getEVMAddress answer; "" means the wallet is unassociated.
-func stubRPC(t *testing.T, associated, expectWallet string) *httptest.Server {
+// stubToken is the ERC-20 the stub RPC serves: symbolHex and balanceHex are
+// returned verbatim, decimals is re-read on each call.
+type stubToken struct {
+	decimals   uint64
+	symbolHex  string
+	balanceHex string
+}
+
+func usdc() *stubToken {
+	return &stubToken{decimals: 6, symbolHex: abiString("USDC"), balanceHex: "0x" + leftPadHex(123_456_789)}
+}
+
+// stubRPC serves token for expectWallet. associated is the sei_getEVMAddress
+// answer; "" means the wallet is unassociated.
+func stubRPC(t *testing.T, associated, expectWallet string, token *stubToken) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req struct {
@@ -74,14 +86,14 @@ func stubRPC(t *testing.T, associated, expectWallet string) *httptest.Server {
 			data := strings.TrimPrefix(call["data"], "0x")
 			switch {
 			case strings.HasPrefix(data, selectorDecimals):
-				result = "0x" + leftPadHex(6)
+				result = "0x" + leftPadHex(token.decimals)
 			case strings.HasPrefix(data, selectorSymbol):
-				result = abiString("USDC")
+				result = token.symbolHex
 			case strings.HasPrefix(data, selectorBalanceOf):
 				if !strings.HasSuffix(data, strings.TrimPrefix(expectWallet, "0x")) {
 					t.Fatalf("balanceOf called for unexpected wallet: %s", data)
 				}
-				result = "0x" + leftPadHex(123_456_789) // 123.456789 USDC
+				result = token.balanceHex
 			default:
 				t.Fatalf("unexpected eth_call data: %s", data)
 			}
@@ -101,22 +113,94 @@ func TestEVMWalletHandler(t *testing.T) {
 		"associated wallet uses the associated one": {testAssoc, testAssoc},
 	} {
 		t.Run(name, func(t *testing.T) {
-			tokenMetadataCache = sync.Map{}
-			server := stubRPC(t, tc.associated, tc.evmAddress)
+			tokenSymbolCache = sync.Map{}
+			server := stubRPC(t, tc.associated, tc.evmAddress, usdc())
 			defer server.Close()
 
-			req := httptest.NewRequest(http.MethodGet, "/metrics/evm-wallet?address="+testSeiWallet+"&tokens="+testToken, nil)
-			rec := httptest.NewRecorder()
-			EVMWalletHandler(rec, req, newEVMRPCClient(server.URL))
-
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
-			}
+			body := scrape(t, server.URL, testToken)
 			want := `sei_chain_cosmos_wallet_erc20_balance{address="` + testSeiWallet + `",chain_id="test-1",evm_address="` + tc.evmAddress + `",symbol="USDC",token="` + testToken + `"} 123.456789`
-			if !strings.Contains(rec.Body.String(), want) {
-				t.Errorf("missing %q in:\n%s", want, rec.Body.String())
+			if !strings.Contains(body, want) {
+				t.Errorf("missing %q in:\n%s", want, body)
 			}
 		})
+	}
+}
+
+func scrape(t *testing.T, rpcURL, tokens string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/metrics/evm-wallet?address="+testSeiWallet+"&tokens="+tokens, nil)
+	rec := httptest.NewRecorder()
+	EVMWalletHandler(rec, req, newEVMRPCClient(rpcURL))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
+func TestEVMWalletHandlerSkipsAnEmptyBalance(t *testing.T) {
+	ConstLabels = map[string]string{"chain_id": "test-1"}
+	sdk.GetConfig().SetBech32PrefixForAccount("sei", "seipub")
+	tokenSymbolCache = sync.Map{}
+	token := usdc()
+	token.balanceHex = "0x"
+	server := stubRPC(t, "", testWallet, token)
+	defer server.Close()
+
+	if body := scrape(t, server.URL, testToken); strings.Contains(body, "sei_chain_cosmos_wallet_erc20_balance{") {
+		t.Errorf("an empty balanceOf must not be reported as zero:\n%s", body)
+	}
+}
+
+func TestEVMWalletHandlerReportsATokenWithoutASymbol(t *testing.T) {
+	ConstLabels = map[string]string{"chain_id": "test-1"}
+	sdk.GetConfig().SetBech32PrefixForAccount("sei", "seipub")
+	tokenSymbolCache = sync.Map{}
+	token := usdc()
+	token.symbolHex = "0x"
+	server := stubRPC(t, "", testWallet, token)
+	defer server.Close()
+
+	body := scrape(t, server.URL, testToken)
+	if !strings.Contains(body, `symbol="",token="`+testToken+`"} 123.456789`) {
+		t.Errorf("the balance must be reported with an empty symbol:\n%s", body)
+	}
+}
+
+func TestEVMWalletHandlerFollowsDecimalsButPinsTheSymbol(t *testing.T) {
+	ConstLabels = map[string]string{"chain_id": "test-1"}
+	sdk.GetConfig().SetBech32PrefixForAccount("sei", "seipub")
+	tokenSymbolCache = sync.Map{}
+	token := usdc()
+	server := stubRPC(t, "", testWallet, token)
+	defer server.Close()
+
+	scrape(t, server.URL, testToken)
+	token.decimals = 3
+	token.symbolHex = abiString("USDC.n")
+	body := scrape(t, server.URL, testToken)
+	if !strings.Contains(body, `symbol="USDC",token="`+testToken+`"} 123456.789`) {
+		t.Errorf("the scale must follow decimals and the symbol must not:\n%s", body)
+	}
+}
+
+func TestEVMWalletHandlerBoundsTheTokenList(t *testing.T) {
+	sdk.GetConfig().SetBech32PrefixForAccount("sei", "seipub")
+	tokens := make([]string, maxTokensPerRequest+1)
+	for i := range tokens {
+		tokens[i] = testToken
+	}
+	req := httptest.NewRequest(http.MethodGet, "/metrics/evm-wallet?address="+testSeiWallet+"&tokens="+strings.Join(tokens, ","), nil)
+	rec := httptest.NewRecorder()
+	EVMWalletHandler(rec, req, newEVMRPCClient("http://127.0.0.1:0"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestSanitizeSymbol(t *testing.T) {
+	got := sanitizeSymbol("US\x00DC \n" + strings.Repeat("x", 40))
+	if want := "USDC" + strings.Repeat("x", maxSymbolLen-4); got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 

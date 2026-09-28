@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/google/uuid"
@@ -28,14 +29,21 @@ const (
 
 var evmAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
 
+// maxTokensPerRequest bounds the fan-out one scrape may ask for.
+const maxTokensPerRequest = 32
+
+// maxSymbolLen bounds the contract-controlled symbol label.
+const maxSymbolLen = 32
+
 type tokenMetadata struct {
 	symbol      string
 	coefficient float64
 }
 
-// tokenMetadataCache holds symbol/decimals per token contract. Neither changes
-// after deployment, so they are fetched once per process.
-var tokenMetadataCache sync.Map
+// tokenSymbolCache holds the symbol per token contract. It is a series label,
+// so it is read once per process and never changes under the alerts keyed on
+// it; decimals are re-read on every scrape.
+var tokenSymbolCache sync.Map
 
 type evmRPCClient struct {
 	url  string
@@ -83,10 +91,12 @@ func (c *evmRPCClient) ethCall(to, data string) (string, error) {
 	return c.call("eth_call", map[string]string{"to": to, "data": data}, "latest")
 }
 
+// hexToBig decodes an eth_call quantity result. An empty result means the
+// contract returned nothing, which is not a zero.
 func hexToBig(s string) (*big.Int, error) {
 	s = strings.TrimPrefix(s, "0x")
 	if s == "" {
-		return big.NewInt(0), nil
+		return nil, fmt.Errorf("empty return data")
 	}
 	v, ok := new(big.Int).SetString(s, 16)
 	if !ok {
@@ -129,31 +139,57 @@ func decodeABIString(result string) (string, error) {
 }
 
 func (c *evmRPCClient) tokenMetadata(token string) (tokenMetadata, error) {
-	if cached, ok := tokenMetadataCache.Load(token); ok {
-		return cached.(tokenMetadata), nil
-	}
-
 	decimalsHex, err := c.ethCall(token, "0x"+selectorDecimals)
 	if err != nil {
-		return tokenMetadata{}, err
+		return tokenMetadata{}, fmt.Errorf("decimals: %w", err)
 	}
 	decimals, err := hexToBig(decimalsHex)
 	if err != nil {
-		return tokenMetadata{}, err
+		return tokenMetadata{}, fmt.Errorf("decimals: %w", err)
+	}
+	if !decimals.IsUint64() || decimals.Uint64() > math.MaxUint8 {
+		return tokenMetadata{}, fmt.Errorf("decimals: %s is not a uint8", decimals)
 	}
 
+	symbol, ok := tokenSymbolCache.Load(token)
+	if !ok {
+		symbol = c.tokenSymbol(token)
+		tokenSymbolCache.Store(token, symbol)
+	}
+	return tokenMetadata{symbol: symbol.(string), coefficient: math.Pow10(int(decimals.Uint64()))}, nil
+}
+
+// tokenSymbol returns the token's symbol, or "" when the contract has no
+// symbol() or returns one that is not an ABI string. The symbol is only a
+// label, so its absence does not stop the balance from being reported.
+func (c *evmRPCClient) tokenSymbol(token string) string {
 	symbolHex, err := c.ethCall(token, "0x"+selectorSymbol)
 	if err != nil {
-		return tokenMetadata{}, err
+		return ""
 	}
 	symbol, err := decodeABIString(symbolHex)
 	if err != nil {
-		return tokenMetadata{}, err
+		return ""
 	}
+	return sanitizeSymbol(symbol)
+}
 
-	meta := tokenMetadata{symbol: symbol, coefficient: math.Pow10(int(decimals.Int64()))}
-	tokenMetadataCache.Store(token, meta)
-	return meta, nil
+// sanitizeSymbol keeps the printable, non-space characters of a
+// contract-supplied symbol, at most maxSymbolLen of them.
+func sanitizeSymbol(s string) string {
+	var b strings.Builder
+	n := 0
+	for _, c := range s {
+		if !unicode.IsPrint(c) || unicode.IsSpace(c) {
+			continue
+		}
+		if n == maxSymbolLen {
+			break
+		}
+		b.WriteRune(c)
+		n++
+	}
+	return b.String()
 }
 
 func (c *evmRPCClient) tokenBalance(token, wallet string) (*big.Int, error) {
@@ -212,6 +248,11 @@ func EVMWalletHandler(w http.ResponseWriter, r *http.Request, rpc *evmRPCClient)
 			return
 		}
 		tokens = append(tokens, strings.ToLower(token))
+	}
+	if len(tokens) > maxTokensPerRequest {
+		sublogger.Error().Int("tokens", len(tokens)).Msg("Too many tokens")
+		http.Error(w, fmt.Sprintf("at most %d tokens per request", maxTokensPerRequest), http.StatusBadRequest)
+		return
 	}
 
 	tokenBalanceGauge := prometheus.NewGaugeVec(
