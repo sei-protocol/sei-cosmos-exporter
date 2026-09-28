@@ -54,6 +54,9 @@ type stubToken struct {
 	balanceHex string
 }
 
+// stubUnavailable as symbolHex makes the stub fail the symbol() request outright.
+const stubUnavailable = "unavailable"
+
 func usdc() *stubToken {
 	return &stubToken{decimals: 6, symbolHex: abiString("USDC"), balanceHex: "0x" + leftPadHex(123_456_789)}
 }
@@ -88,6 +91,10 @@ func stubRPC(t *testing.T, associated, expectWallet string, token *stubToken) *h
 			case strings.HasPrefix(data, selectorDecimals):
 				result = "0x" + leftPadHex(token.decimals)
 			case strings.HasPrefix(data, selectorSymbol):
+				if token.symbolHex == stubUnavailable {
+					http.Error(w, "upstream unavailable", http.StatusBadGateway)
+					return
+				}
 				result = token.symbolHex
 			case strings.HasPrefix(data, selectorBalanceOf):
 				if !strings.HasSuffix(data, strings.TrimPrefix(expectWallet, "0x")) {
@@ -163,6 +170,24 @@ func TestEVMWalletHandlerReportsATokenWithoutASymbol(t *testing.T) {
 	body := scrape(t, server.URL, testToken)
 	if !strings.Contains(body, `symbol="",token="`+testToken+`"} 123.456789`) {
 		t.Errorf("the balance must be reported with an empty symbol:\n%s", body)
+	}
+}
+
+func TestEVMWalletHandlerDoesNotPinASymbolItCouldNotRead(t *testing.T) {
+	ConstLabels = map[string]string{"chain_id": "test-1"}
+	sdk.GetConfig().SetBech32PrefixForAccount("sei", "seipub")
+	tokenSymbolCache = sync.Map{}
+	token := usdc()
+	token.symbolHex = stubUnavailable
+	server := stubRPC(t, "", testWallet, token)
+	defer server.Close()
+
+	if body := scrape(t, server.URL, testToken); strings.Contains(body, "sei_chain_cosmos_wallet_erc20_balance{") {
+		t.Errorf("a balance must not be reported under a symbol that could not be read:\n%s", body)
+	}
+	token.symbolHex = abiString("USDC")
+	if body := scrape(t, server.URL, testToken); !strings.Contains(body, `symbol="USDC",token="`+testToken+`"} 123.456789`) {
+		t.Errorf("the symbol must be read again on the next scrape:\n%s", body)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -82,9 +83,21 @@ func (c *evmRPCClient) call(method string, params ...interface{}) (string, error
 		return "", err
 	}
 	if decoded.Error != nil {
-		return "", fmt.Errorf("%s: rpc error %d: %s", method, decoded.Error.Code, decoded.Error.Message)
+		return "", &rpcError{method: method, code: decoded.Error.Code, message: decoded.Error.Message}
 	}
 	return decoded.Result, nil
+}
+
+// rpcError is an error the node answered with, as opposed to a failure to
+// reach it or read its answer.
+type rpcError struct {
+	method  string
+	code    int
+	message string
+}
+
+func (e *rpcError) Error() string {
+	return fmt.Sprintf("%s: rpc error %d: %s", e.method, e.code, e.message)
 }
 
 func (c *evmRPCClient) ethCall(to, data string) (string, error) {
@@ -153,7 +166,10 @@ func (c *evmRPCClient) tokenMetadata(token string) (tokenMetadata, error) {
 
 	symbol, ok := tokenSymbolCache.Load(token)
 	if !ok {
-		symbol = c.tokenSymbol(token)
+		symbol, err = c.tokenSymbol(token)
+		if err != nil {
+			return tokenMetadata{}, fmt.Errorf("symbol: %w", err)
+		}
 		tokenSymbolCache.Store(token, symbol)
 	}
 	return tokenMetadata{symbol: symbol.(string), coefficient: math.Pow10(int(decimals.Uint64()))}, nil
@@ -161,17 +177,23 @@ func (c *evmRPCClient) tokenMetadata(token string) (tokenMetadata, error) {
 
 // tokenSymbol returns the token's symbol, or "" when the contract has no
 // symbol() or returns one that is not an ABI string. The symbol is only a
-// label, so its absence does not stop the balance from being reported.
-func (c *evmRPCClient) tokenSymbol(token string) string {
+// label, so its absence does not stop the balance from being reported. Only
+// a failure to get an answer from the node is an error, so a transient
+// outage is never mistaken for a token without a symbol.
+func (c *evmRPCClient) tokenSymbol(token string) (string, error) {
 	symbolHex, err := c.ethCall(token, "0x"+selectorSymbol)
+	var rpcErr *rpcError
+	if errors.As(err, &rpcErr) {
+		return "", nil
+	}
 	if err != nil {
-		return ""
+		return "", err
 	}
 	symbol, err := decodeABIString(symbolHex)
 	if err != nil {
-		return ""
+		return "", nil
 	}
-	return sanitizeSymbol(symbol)
+	return sanitizeSymbol(symbol), nil
 }
 
 // sanitizeSymbol keeps the printable, non-space characters of a
