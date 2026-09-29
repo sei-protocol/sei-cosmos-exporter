@@ -21,12 +21,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// ERC-20 function selectors: keccak256 of the canonical signature, first 4 bytes.
+// Function selectors: keccak256 of the canonical signature, first 4 bytes.
 const (
-	selectorBalanceOf = "70a08231"
-	selectorDecimals  = "313ce567"
-	selectorSymbol    = "95d89b41"
+	selectorBalanceOf  = "70a08231"
+	selectorDecimals   = "313ce567"
+	selectorSymbol     = "95d89b41"
+	selectorGetEvmAddr = "1778e539" // getEvmAddr(string) on the addr precompile
 )
+
+// addrPrecompile is the chain's address-association precompile.
+const addrPrecompile = "0x0000000000000000000000000000000000001004"
 
 var evmAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
 
@@ -127,6 +131,31 @@ func abiAddressArg(address string) string {
 	return strings.Repeat("0", 24) + strings.ToLower(strings.TrimPrefix(address, "0x"))
 }
 
+// abiStringArg encodes s as a single ABI dynamic string argument.
+func abiStringArg(s string) string {
+	padded := []byte(s)
+	for len(padded)%32 != 0 {
+		padded = append(padded, 0)
+	}
+	return abiWord(32) + abiWord(uint64(len(s))) + hex.EncodeToString(padded)
+}
+
+func abiWord(v uint64) string {
+	return fmt.Sprintf("%064x", v)
+}
+
+// decodeABIAddress decodes a single ABI-encoded `address` return value.
+func decodeABIAddress(result string) (string, error) {
+	raw, err := hex.DecodeString(strings.TrimPrefix(result, "0x"))
+	if err != nil {
+		return "", err
+	}
+	if len(raw) != 32 {
+		return "", fmt.Errorf("abi address is %d bytes, not 32", len(raw))
+	}
+	return "0x" + hex.EncodeToString(raw[12:]), nil
+}
+
 // decodeABIString decodes a single ABI-encoded dynamic `string` return value.
 // Tokens that return `bytes32` for symbol() are handled by trimming zero bytes.
 func decodeABIString(result string) (string, error) {
@@ -224,19 +253,22 @@ func (c *evmRPCClient) tokenBalance(token, wallet string) (*big.Int, error) {
 
 // evmAddress resolves a sei1 address to the 0x address the EVM sees it as: the
 // associated address when one exists, otherwise the cast of the same 20 bytes,
-// matching the chain's GetEVMAddressOrDefault.
+// matching the chain's GetEVMAddressOrDefault. The association is read from
+// the addr precompile's getEvmAddr, which reverts for an unassociated wallet.
 func (c *evmRPCClient) evmAddress(acc sdk.AccAddress) (string, error) {
-	result, err := c.call("sei_getEVMAddress", acc.String())
-	if err == nil {
-		if !evmAddressPattern.MatchString(result) {
-			return "", fmt.Errorf("sei_getEVMAddress returned %q", result)
-		}
-		return strings.ToLower(result), nil
+	result, err := c.ethCall(addrPrecompile, "0x"+selectorGetEvmAddr+abiStringArg(acc.String()))
+	var rpcErr *rpcError
+	if errors.As(err, &rpcErr) {
+		return "0x" + hex.EncodeToString(acc), nil
 	}
-	if !strings.Contains(err.Error(), "failed to find EVM address") {
+	if err != nil {
 		return "", err
 	}
-	return "0x" + hex.EncodeToString(acc), nil
+	address, err := decodeABIAddress(result)
+	if err != nil {
+		return "", fmt.Errorf("getEvmAddr: %w", err)
+	}
+	return address, nil
 }
 
 // EVMWalletHandler serves /metrics/evm-wallet?address=sei1...&tokens=0x...,0x...

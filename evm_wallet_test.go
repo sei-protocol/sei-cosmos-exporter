@@ -61,8 +61,8 @@ func usdc() *stubToken {
 	return &stubToken{decimals: 6, symbolHex: abiString("USDC"), balanceHex: "0x" + leftPadHex(123_456_789)}
 }
 
-// stubRPC serves token for expectWallet. associated is the sei_getEVMAddress
-// answer; "" means the wallet is unassociated.
+// stubRPC serves token for expectWallet. associated is the addr precompile's
+// getEvmAddr answer; "" means the wallet is unassociated and the call reverts.
 func stubRPC(t *testing.T, associated, expectWallet string, token *stubToken) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -76,18 +76,21 @@ func stubRPC(t *testing.T, associated, expectWallet string, token *stubToken) *h
 
 		var result string
 		switch req.Method {
-		case "sei_getEVMAddress":
-			if associated == "" {
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": 1,
-					"error": map[string]interface{}{"code": -32000, "message": "failed to find EVM address for " + testSeiWallet}})
-				return
-			}
-			result = associated
 		case "eth_call":
 			var call map[string]string
 			_ = json.Unmarshal(req.Params[0], &call)
 			data := strings.TrimPrefix(call["data"], "0x")
 			switch {
+			case call["to"] == addrPrecompile:
+				if data != selectorGetEvmAddr+abiStringArg(testSeiWallet) {
+					t.Fatalf("unexpected addr precompile call: %s", data)
+				}
+				if associated == "" {
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": 1,
+						"error": map[string]interface{}{"code": 3, "message": "execution reverted"}})
+					return
+				}
+				result = "0x" + abiAddressArg(associated)
 			case strings.HasPrefix(data, selectorDecimals):
 				result = "0x" + leftPadHex(token.decimals)
 			case strings.HasPrefix(data, selectorSymbol):
