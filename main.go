@@ -27,6 +27,7 @@ var (
 	ListenAddress string
 	NodeAddress   string
 	TendermintRPC string
+	EVMRPC        string
 	LogLevel      string
 	JSONOutput    bool
 	Limit         uint64
@@ -152,6 +153,7 @@ func Execute(cmd *cobra.Command, args []string) {
 		Str("--denom-exponent", fmt.Sprintf("%d", DenomExponent)).
 		Str("--listen-address", ListenAddress).
 		Str("--node", NodeAddress).
+		Str("--evm-rpc", EVMRPC).
 		Str("--log-level", LogLevel).
 		Msg("Started with following parameters")
 
@@ -185,6 +187,11 @@ func Execute(cmd *cobra.Command, args []string) {
 
 	http.HandleFunc("/metrics/wallet", func(w http.ResponseWriter, r *http.Request) {
 		WalletHandler(w, r, grpcConn)
+	})
+
+	evmRPC := newEVMRPCClient(EVMRPC)
+	http.HandleFunc("/metrics/evm-wallet", func(w http.ResponseWriter, r *http.Request) {
+		EVMWalletHandler(w, r, evmRPC)
 	})
 
 	http.HandleFunc("/metrics/validator", func(w http.ResponseWriter, r *http.Request) {
@@ -320,6 +327,7 @@ func main() {
 	rootCmd.PersistentFlags().Uint64Var(&Limit, "limit", 1000, "Pagination limit for gRPC requests")
 	rootCmd.PersistentFlags().DurationVar(&RequestTimeout, "request-timeout", 8*time.Second, "Deadline for the gRPC queries behind a single metrics request")
 	rootCmd.PersistentFlags().StringVar(&TendermintRPC, "tendermint-rpc", "http://localhost:26657", "Tendermint RPC address")
+	rootCmd.PersistentFlags().StringVar(&EVMRPC, "evm-rpc", "http://localhost:8545", "EVM JSON-RPC address")
 	rootCmd.PersistentFlags().BoolVar(&JSONOutput, "json", false, "Output logs as JSON")
 
 	// some networks, like Iris, have the different prefixes for address, validator and consensus node
